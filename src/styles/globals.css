@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-sm text-content antialiased;
+    /* Money columns must align across rows, everywhere. */
+    font-variant-numeric: tabular-nums;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Every numeral in this app is a ledger figure. */
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'zero' 1;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-azure/70 ring-offset-2 ring-offset-canvas;
+  }
+
+  ::selection {
+    @apply bg-azure/30 text-content;
+  }
+
+  /* Thin, recessed scrollbars so dense tables keep their pixels. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #2a3950 transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: #2a3950;
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 9999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: #3a4c69;
+  }
+
+  /* Desktop chrome: text selection is opt-in, like a native app. */
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input,
+  textarea,
+  [data-selectable] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
+@layer components {
+  /* Shared panel shell. Flat, hairline-bordered, no translucency. */
+  .panel {
+    @apply rounded-panel border border-hairline bg-surface shadow-panel;
+  }
+
+  .panel-header {
+    @apply flex items-center justify-between gap-3 border-b border-hairline px-4 py-3;
+  }
+
+  .eyebrow {
+    @apply font-mono text-eyebrow uppercase text-content-faint;
+  }
+
+  /* Hairline grid used by tables and stat rows. */
+  .divide-hairline-y > * + * {
+    @apply border-t border-hairline;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
