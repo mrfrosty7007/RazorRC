@@ -4,6 +4,44 @@ An AI revenue-recovery console for Razorpay merchants. Failed payments arrive as
 
 Built for the Razorpay AI Buildathon 2026, Track 3 — as an internal merchant tool would be built, not as a demo.
 
+## Screenshots
+
+**Merchant Dashboard** — revenue at risk, amount recovered, recovery rate and active jobs, each against the previous period, with the live recovery queue and the insight panel underneath.
+
+![ReviveAI merchant dashboard](docs/screenshots/dashboard.png)
+
+**Recovery Queue** — every failed payment as a worked item: score, risk tier, recommended action and SLA, filterable by status, failure reason, method and risk tier.
+
+![ReviveAI recovery queue](docs/screenshots/recovery-queue.png)
+
+**AI decision** — the job drawer, showing the signals that produced the score, the action the engine recommends, and the attempt history behind it.
+
+![ReviveAI AI recovery decision](docs/screenshots/ai-decision.png)
+
+Images live in `docs/screenshots/`. They are captured from the app running against the demo dataset described below, so anything visible in them is reproducible on a fresh install.
+
+## Demo video
+
+**Walkthrough:** _link to be added before submission_ — `https://…`
+
+Running order of the recording: a failed payment landing in the queue, the signal breakdown behind its recovery score, an operator approving the recommended action, and that same action appearing in the audit trail seconds later with the operator's name against it.
+
+## Why ReviveAI
+
+Most failure tooling is a report. It tells a merchant that ₹4.2 lakh failed last week, which codes were involved, and roughly which methods are worst — and then leaves the actual recovery work to whoever opens the export. The failures that were never worth chasing sit next to the ones that would have converted on a single retry, and nothing records what anyone decided.
+
+ReviveAI is built to be the operator rather than the report. It takes a position on every failure: *this one is worth chasing, by this channel, at this hour, because of these seven signals* — and then it either does it or waits for a human to approve it. That difference shows up in four places.
+
+It **triages instead of aggregating.** A score and a risk tier per payment, so the queue is ordered by expected recovery rather than by timestamp.
+
+It **decides the next action, not just the diagnosis.** Insufficient funds near payday is a scheduled re-presentment; an expired card is a card-refresh nudge; a checkout drop-off is a reminder. The failure taxonomy exists precisely so a new gateway code cannot silently produce a new behaviour.
+
+It **acts on a clock.** Actions are scheduled with delays, and a sweep thread starts what is due. Recovery windows are short, and a recommendation nobody executed is worth nothing.
+
+It **is accountable.** Every score, approval, suppression, retry and automated action lands in an append-only trail, attributed and timestamped. A merchant can audit the engine's reasoning and overrule it — which is the point. An operator that cannot be questioned is not one you would let near live revenue.
+
+The judgement itself is deliberately deterministic rather than generative. Revenue decisions have to be explainable to a finance team, reproducible in a test, and stable across runs, so the engine reasons in weighted signals and shows its work; the language model sits above it in the Copilot, answering questions about the data, never quietly deciding who gets charged again.
+
 ## What it does
 
 A payment fails. Razorpay tells you the code and the amount, and that is where most dashboards stop. ReviveAI takes it three steps further: it decides whether this failure is worth chasing, decides *how* to chase it, and remembers who decided what.
@@ -22,11 +60,56 @@ Five surfaces:
 
 **Audit Trail** — every state transition, every operator action, every sweep that did something, searchable and filterable by severity.
 
+## AI Recovery Workflow
+
+```
+        Payment Failed
+              ↓
+    Failure Classification
+              ↓
+    Recovery Score Engine
+              ↓
+ AI Recovery Recommendation
+              ↓
+Merchant Approval / Automation
+              ↓
+       Recovery Action
+              ↓
+   Audit Trail + Metrics
+```
+
+**Payment Failed** — a failure enters the store as a `failed_payment` row plus a `recovery_job`, carrying the amount in paise, the method, the network, the issuer and the gateway's own description. In Phase 1 this is the demo ingest; in Phase 2 it is the `payment.failed` webhook.
+
+**Failure Classification** — the gateway code is mapped onto a fixed ten-value taxonomy (`domain.rs`) at ingest. The rules engine never reasons about gateway vocabulary, so a new Razorpay code cannot invent a new behaviour without someone extending the taxonomy on purpose.
+
+**Recovery Score Engine** — `recovery/rules.rs` applies seven weighted signals: the historical recovery rate for that failure reason, the customer's successful-payment history (or absence of one), retry fatigue, ticket size, whether a mandate is on file, and whether the rail is UPI. Output is a 0–100 score, a risk tier, and the `Signal[]` that produced them.
+
+**AI Recovery Recommendation** — the same pass chooses an action kind and channel with a delay attached — re-present the mandate, retry now, refresh the card, send a reminder, or write it off — and the recommendation travels with its evidence, so the drawer can show *why* rather than just *what*.
+
+**Merchant Approval / Automation** — an operator can approve, retry immediately, or suppress with a reason; a matching enabled playbook can schedule the action without asking. Both paths converge on the same command layer, so an automated action and a human one are recorded identically.
+
+**Recovery Action** — the sweep thread wakes each minute, claims the jobs whose scheduled moment has arrived, and writes a `recovery_attempt`. Claiming is transactional: if an operator closed the job since the query, the human wins and the sweep skips it.
+
+**Audit Trail + Metrics** — the attempt and its audit event commit in one transaction, then the dashboard, analytics and playbook statistics recompute from the same rows. Nothing in the product is a counter maintained by hand.
+
 ## Running it
+
+### Prerequisites
+
+Node.js 20 or newer, a package manager (pnpm 9 is what the Linux build was validated with; npm works identically), and a stable Rust toolchain via [rustup](https://rustup.rs). Tauri also needs a few system libraries, listed per platform below. `pnpm install` and `npm install` are interchangeable throughout — the scripts are the same.
+
+### From source
 
 ```bash
 npm install
 npm run app:dev      # Tauri shell + Vite dev server
+```
+
+Or, with pnpm:
+
+```bash
+pnpm install
+pnpm app:dev
 ```
 
 The webview alone also runs, against the seeded browser dataset, which is useful for UI work:
@@ -44,6 +127,91 @@ npm run app:build    # runs `npm run build` first, then bundles
 Copy `.env.example` to `.env` before the first run if you want to override the merchant identity, the operator name recorded in the audit trail, or the database location. Every value has a working default, and a missing `.env` is normal — the app starts without Razorpay credentials and says so in the sidebar rather than refusing to launch.
 
 Useful scripts: `npm run typecheck` (`tsc --noEmit`), `npm run lint`, and on the Rust side `cargo test --manifest-path src-tauri/Cargo.toml`, which exercises the engine, the store and the migrations without a webview.
+
+### Download a build (GitHub Releases)
+
+_Placeholder — installers will be attached to the first tagged release:_ `https://github.com/<owner>/ReviveAI/releases`
+
+| Platform | Artifact |
+| --- | --- |
+| Windows 10/11 (x64) | `ReviveAI_0.1.0_x64-setup.exe` — NSIS installer |
+| macOS 11+ (Apple silicon / Intel) | `ReviveAI_0.1.0_aarch64.dmg` / `ReviveAI_0.1.0_x64.dmg` |
+| Linux (x64) | `ReviveAI_0.1.0_amd64.AppImage` / `ReviveAI_0.1.0_amd64.deb` |
+
+Filenames are derived from `productName` and `version`, so they will track those two fields rather than being spelled out anywhere. Until that release exists, build from source with the platform notes below. Every bundle lands in `src-tauri/target/release/bundle/`.
+
+### Windows
+
+Install the [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the "Desktop development with C++" workload, and [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) — already present on Windows 11 and on updated Windows 10. Then:
+
+```powershell
+rustup default stable-msvc
+pnpm install
+pnpm app:build          # -> src-tauri\target\release\bundle\nsis\*-setup.exe
+```
+
+Windows builds produce an **NSIS installer** (`.exe`), configured in `src-tauri/tauri.windows.conf.json` to install per-user, so no administrator prompt appears. WebView2 is fetched by the installer if the machine does not already have it. The installer is unsigned, so SmartScreen will warn on first run; "More info → Run anyway" clears it. Code signing is a release-time step, not a build one. The database is created under `%APPDATA%\com.reviveai.app\`.
+
+### macOS
+
+Install the Xcode Command Line Tools (`xcode-select --install`), then:
+
+```bash
+pnpm install
+pnpm app:build          # -> src-tauri/target/release/bundle/dmg/*.dmg
+```
+
+macOS builds produce a **`.dmg`**, with a minimum system version of 10.15 declared in `src-tauri/tauri.macos.conf.json`. Apple silicon and Intel need their own targets — `rustup target add aarch64-apple-darwin x86_64-apple-darwin`, then `pnpm tauri build --target universal-apple-darwin` for a universal binary. An unsigned and unnotarised build is quarantined by Gatekeeper on first open: right-click → Open, or `xattr -dr com.apple.quarantine /Applications/ReviveAI.app`. The database is created under `~/Library/Application Support/com.reviveai.app/`.
+
+### Linux
+
+Tauri v2 needs WebKitGTK 4.1 and a tray/appindicator library. On Debian or Ubuntu:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
+  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+pnpm install
+pnpm app:build          # -> src-tauri/target/release/bundle/{appimage,deb}/
+```
+
+Fedora uses `webkit2gtk4.1-devel`, `openssl-devel`, `libappindicator-gtk3-devel` and `librsvg2-devel`; Arch uses `webkit2gtk-4.1`, `libappindicator-gtk3` and `librsvg`. Linux builds produce both an **AppImage** and a **`.deb`**, declared in `src-tauri/tauri.linux.conf.json`; the `.deb` depends on `libwebkit2gtk-4.1-0` and `libgtk-3-0`. The AppImage runs without installation (`chmod +x` first). The database is created under `~/.local/share/com.reviveai.app/`, or wherever `REVIVEAI_DB_PATH` points.
+
+### Bundle configuration
+
+Release settings live in four files, so no platform's requirements leak into another's:
+
+| File | Role |
+| --- | --- |
+| `src-tauri/tauri.conf.json` | product metadata — `productName` `ReviveAI`, `identifier` `com.reviveai.app`, `version` `0.1.0` — the window, the CSP, the icon set, and the union of bundle targets |
+| `src-tauri/tauri.windows.conf.json` | `nsis` target, per-user install mode, WebView2 bootstrapper |
+| `src-tauri/tauri.macos.conf.json` | `dmg` target, minimum system version |
+| `src-tauri/tauri.linux.conf.json` | `appimage` and `deb` targets, Debian dependencies |
+
+Tauri merges the platform file into the base config automatically when building for that host, so `pnpm app:build` needs no flags. To override, `pnpm tauri build --bundles deb` builds one target; `--bundles app` on macOS produces `ReviveAI.app` without the disk image.
+
+The icon set covers every platform from one 1024px master: `32x32.png`, `128x128.png` and `128x128@2x.png` for Linux and the window, `icon.ico` (16 through 256) for Windows and the NSIS installer, and `icon.icns` (32 through 1024, including the retina variants) for the macOS bundle. All PNGs are 32-bit RGBA, which Tauri requires and rejects builds without.
+
+Both config metadata and every bundle key are validated against the config schema that ships with the pinned CLI (`@tauri-apps/cli` 2.11.4, JSON Schema draft-07, `additionalProperties: false`) — base config and all three platform merges pass, so a misspelled bundle key cannot reach a build.
+
+`.github/workflows/release.yml` builds all four artifacts on a tag push and attaches them to a draft GitHub Release. That workflow is how the Windows and macOS bundles will be validated — see the verification note below.
+
+Note for anyone upgrading a local install: the identifier changed from `in.reviveai.console` to `com.reviveai.app`, which moves the application-data directory. An earlier local database is not migrated; point `REVIVEAI_DB_PATH` at the old file if you want to keep it.
+
+## Built With
+
+**React 18** and **TypeScript** — the console is a lot of stateful tables, drawers and filters, and strict TypeScript is what keeps the paise-versus-rupees and status-taxonomy mistakes from reaching the screen. Every Rust struct that crosses the bridge has a matching interface in `src/domain/types.ts`.
+
+**Tauri v2** — a desktop shell with a per-command permission model. The webview is granted `core:default` and nothing else, so the frontend cannot touch the filesystem, spawn a shell or make an HTTP request; the only way to the database is through the sixteen audited commands. That is a security property Electron would not have given for free.
+
+**Rust** — the recovery engine, the scoring rules, the sweep thread and the store. Determinism and an append-only trail are the product claims, and both are easier to guarantee in a typed language with real transactions and a test suite that runs without a UI.
+
+**SQLite** (rusqlite, bundled) — local, transactional and inspectable. `STRICT` tables, WAL journaling, foreign keys on, and triggers that make `audit_events` reject updates and deletes outright.
+
+**Tailwind CSS** — a small set of semantic tokens (`canvas`, `surface`, `raised`, `hairline`, `content`, `azure`, `mint`, `amber`, `coral`) rather than ad-hoc hex values, which is what keeps the dark fintech theme coherent across five pages.
+
+**Recharts** — the trend, mix and effectiveness charts, themed against the same tokens so the visualisations do not look bolted on.
+
+**Vite** — dev server and bundler, with the Tauri dev URL wired to port 1420.
 
 ## Architecture
 
@@ -76,7 +244,11 @@ On first run against an empty store the engine ingests twelve failed payments an
 
 ## Verification status
 
-`cargo` and `npm` were unavailable in the environment this was authored in, so the Rust crate and the TypeScript app have been verified by static review and scripted consistency checks rather than by a build: the sixteen `generate_handler!` names match the adapter's command list exactly; every `module::item` call resolves to a declared public item; every table and column named in SQL exists in the schema; and the serde field names on every Rust struct match the TypeScript interface it crosses the bridge as. Run `npm install && npm run build` and `cargo test` first on a machine with toolchains before trusting it further.
+The app has been built and run on **Linux** with Node.js, pnpm, Rust and Tauri: the frontend typechecks and bundles, the Rust crate compiles, `cargo test` passes over the engine, the store and the migrations, and the desktop shell starts against a real SQLite database with the demo dataset seeded through the live ingest path.
+
+**Windows and macOS builds will be validated before release.** Nothing in the code is platform-specific — the store resolves its own path from the OS application-data directory, and the only Windows-only line is the release-mode `windows_subsystem` attribute in `main.rs` — but neither bundle has been produced yet, so treat the installer names in the Releases table above as intended rather than tested.
+
+Alongside the build, the project is held together by scripted consistency checks worth knowing about: the sixteen `generate_handler!` names match the adapter's command list exactly; every `module::item` call resolves to a declared public item; every table and column named in SQL exists in the schema; and the serde field names on every Rust struct match the TypeScript interface it crosses the bridge as. Those four invariants are the ones that break silently when the two halves of the app drift apart, which is why they are checked rather than assumed.
 
 ## Phase 2
 
