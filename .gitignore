@@ -1,0 +1,19 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+.DS_Store
+.env
+.env.local
+.eslintcache
+src-tauri/target/
+src-tauri/gen/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Throwaway database directory suggested by .env.example.
+.local/

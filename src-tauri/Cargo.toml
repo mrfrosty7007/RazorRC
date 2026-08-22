@@ -1,0 +1,47 @@
+[package]
+name = "reviveai"
+version = "0.1.0"
+description = "AI Revenue Recovery console for Razorpay merchants"
+authors = ["ReviveAI"]
+edition = "2021"
+rust-version = "1.77"
+default-run = "reviveai"
+
+# The binary is a three-line shim around `reviveai_lib::run()`. Keeping the app
+# in a library means the recovery engine and its tests can be exercised with
+# plain `cargo test`, without standing up a webview.
+[lib]
+name = "reviveai_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# `bundled` compiles SQLite from source and links it statically: the shipped app
+# never depends on whatever libsqlite3 happens to be on the user's machine.
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+time = { version = "0.3", features = ["formatting", "parsing"] }
+thiserror = "1"
+dotenvy = "0.15"
+
+# Razorpay webhook signature verification. Pure Rust, no OpenSSL dependency.
+hmac = "0.12"
+sha2 = "0.10"
+
+[features]
+# Tauri's `custom-protocol` is switched on by `tauri build`; in development the
+# frontend is served by Vite instead.
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
