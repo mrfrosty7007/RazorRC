@@ -1,6 +1,6 @@
 [package]
 name = "reviveai"
-version = "0.1.0"
+version = "1.0.0"
 description = "AI Revenue Recovery console for Razorpay merchants"
 authors = ["ReviveAI"]
 edition = "2021"
