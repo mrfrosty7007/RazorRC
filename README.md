@@ -130,15 +130,14 @@ Useful scripts: `npm run typecheck` (`tsc --noEmit`), `npm run lint`, and on the
 
 ### Download a build (GitHub Releases)
 
-_Placeholder — installers will be attached to the first tagged release:_ `https://github.com/<owner>/ReviveAI/releases`
+_Placeholder — the installer will be attached to the first tagged release:_ `https://github.com/<owner>/ReviveAI/releases`
 
 | Platform | Artifact |
 | --- | --- |
-| Windows 10/11 (x64) | `ReviveAI_0.1.0_x64-setup.exe` — NSIS installer |
-| macOS 11+ (Apple silicon / Intel) | `ReviveAI_0.1.0_aarch64.dmg` / `ReviveAI_0.1.0_x64.dmg` |
-| Linux (x64) | `ReviveAI_0.1.0_amd64.AppImage` / `ReviveAI_0.1.0_amd64.deb` |
+| Windows 10/11 (x64) | `ReviveAI_1.0.0_x64-setup.exe` — NSIS installer |
+| macOS, Linux | No native build — these platforms use the web version |
 
-Filenames are derived from `productName` and `version`, so they will track those two fields rather than being spelled out anywhere. Until that release exists, build from source with the platform notes below. Every bundle lands in `src-tauri/target/release/bundle/`.
+The desktop app ships for Windows only, so there is no `.dmg`, AppImage or `.deb` to download. Nothing in the code is Windows-specific — the app still compiles and runs on Linux and macOS, which is where most of the development happens — but those platforms are served by the web build rather than an installer. The filename above is derived from `productName` and `version`, so it tracks those two fields rather than being spelled out anywhere, and the installer lands in `src-tauri\target\release\bundle\nsis\`.
 
 ### Windows
 
@@ -150,52 +149,32 @@ pnpm install
 pnpm app:build          # -> src-tauri\target\release\bundle\nsis\*-setup.exe
 ```
 
-Windows builds produce an **NSIS installer** (`.exe`), configured in `src-tauri/tauri.windows.conf.json` to install per-user, so no administrator prompt appears. WebView2 is fetched by the installer if the machine does not already have it. The installer is unsigned, so SmartScreen will warn on first run; "More info → Run anyway" clears it. Code signing is a release-time step, not a build one. The database is created under `%APPDATA%\com.reviveai.app\`.
+The build produces an **NSIS installer** (`.exe`) that installs per-user, so no administrator prompt appears, and WebView2 is fetched by the installer if the machine does not already have it. The installer is unsigned, so SmartScreen will warn on first run; "More info → Run anyway" clears it. Code signing is a release-time step, not a build one. The database is created under `%APPDATA%\com.reviveai.desktop\`.
 
-### macOS
+### Developing on Linux or macOS
 
-Install the Xcode Command Line Tools (`xcode-select --install`), then:
-
-```bash
-pnpm install
-pnpm app:build          # -> src-tauri/target/release/bundle/dmg/*.dmg
-```
-
-macOS builds produce a **`.dmg`**, with a minimum system version of 10.15 declared in `src-tauri/tauri.macos.conf.json`. Apple silicon and Intel need their own targets — `rustup target add aarch64-apple-darwin x86_64-apple-darwin`, then `pnpm tauri build --target universal-apple-darwin` for a universal binary. An unsigned and unnotarised build is quarantined by Gatekeeper on first open: right-click → Open, or `xattr -dr com.apple.quarantine /Applications/ReviveAI.app`. The database is created under `~/Library/Application Support/com.reviveai.app/`.
-
-### Linux
-
-Tauri v2 needs WebKitGTK 4.1 and a tray/appindicator library. On Debian or Ubuntu:
+Neither platform produces an installer, but both run the app from source. On Debian or Ubuntu, Tauri v2 needs WebKitGTK 4.1 and a tray/appindicator library:
 
 ```bash
 sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
   libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 pnpm install
-pnpm app:build          # -> src-tauri/target/release/bundle/{appimage,deb}/
+pnpm app:dev
 ```
 
-Fedora uses `webkit2gtk4.1-devel`, `openssl-devel`, `libappindicator-gtk3-devel` and `librsvg2-devel`; Arch uses `webkit2gtk-4.1`, `libappindicator-gtk3` and `librsvg`. Linux builds produce both an **AppImage** and a **`.deb`**, declared in `src-tauri/tauri.linux.conf.json`; the `.deb` depends on `libwebkit2gtk-4.1-0` and `libgtk-3-0`. The AppImage runs without installation (`chmod +x` first). The database is created under `~/.local/share/com.reviveai.app/`, or wherever `REVIVEAI_DB_PATH` points.
+Fedora uses `webkit2gtk4.1-devel`, `openssl-devel`, `libappindicator-gtk3-devel` and `librsvg2-devel`; Arch uses `webkit2gtk-4.1`, `libappindicator-gtk3` and `librsvg`; macOS needs only the Xcode Command Line Tools (`xcode-select --install`). For a release binary without any bundling, `pnpm tauri build --no-bundle`. The database lives under `~/.local/share/com.reviveai.desktop/` or `~/Library/Application Support/com.reviveai.desktop/`, or wherever `REVIVEAI_DB_PATH` points.
 
 ### Bundle configuration
 
-Release settings live in four files, so no platform's requirements leak into another's:
+Release settings live in one file. `src-tauri/tauri.conf.json` carries the product metadata — `productName` `ReviveAI`, `identifier` `com.reviveai.desktop`, `version` `1.0.0` — the window, the CSP, the icon set, the single `nsis` bundle target, and the Windows-specific settings under `bundle.windows`: per-user install mode and the WebView2 download bootstrapper. There are deliberately no per-platform config overlays, because an overlay's `targets` array replaces the base one and would quietly reintroduce a bundle for a platform that is no longer shipped.
 
-| File | Role |
-| --- | --- |
-| `src-tauri/tauri.conf.json` | product metadata — `productName` `ReviveAI`, `identifier` `com.reviveai.app`, `version` `0.1.0` — the window, the CSP, the icon set, and the union of bundle targets |
-| `src-tauri/tauri.windows.conf.json` | `nsis` target, per-user install mode, WebView2 bootstrapper |
-| `src-tauri/tauri.macos.conf.json` | `dmg` target, minimum system version |
-| `src-tauri/tauri.linux.conf.json` | `appimage` and `deb` targets, Debian dependencies |
+The icon set comes from one 1024px master: `32x32.png`, `128x128.png` and `128x128@2x.png` for the window, and `icon.ico` (16 through 256) for Windows and the NSIS installer. `icon.icns` is kept for the macOS window icon during development. All PNGs are 32-bit RGBA, which Tauri requires and rejects builds without.
 
-Tauri merges the platform file into the base config automatically when building for that host, so `pnpm app:build` needs no flags. To override, `pnpm tauri build --bundles deb` builds one target; `--bundles app` on macOS produces `ReviveAI.app` without the disk image.
+Every bundle key is validated against the config schema that ships with the pinned CLI (`@tauri-apps/cli` 2.11.4, JSON Schema draft-07, `additionalProperties: false`), so a misspelled bundle key cannot reach a build.
 
-The icon set covers every platform from one 1024px master: `32x32.png`, `128x128.png` and `128x128@2x.png` for Linux and the window, `icon.ico` (16 through 256) for Windows and the NSIS installer, and `icon.icns` (32 through 1024, including the retina variants) for the macOS bundle. All PNGs are 32-bit RGBA, which Tauri requires and rejects builds without.
+`.github/workflows/release.yml` builds the installer on `windows-latest` and attaches it to a draft GitHub Release when a `v*` tag is pushed. It never creates a tag: `tagName` is passed only when the ref already is one, and a manual `workflow_dispatch` run uploads the installer as a workflow artifact instead of touching releases at all.
 
-Both config metadata and every bundle key are validated against the config schema that ships with the pinned CLI (`@tauri-apps/cli` 2.11.4, JSON Schema draft-07, `additionalProperties: false`) — base config and all three platform merges pass, so a misspelled bundle key cannot reach a build.
-
-`.github/workflows/release.yml` builds all four artifacts on a tag push and attaches them to a draft GitHub Release. That workflow is how the Windows and macOS bundles will be validated — see the verification note below.
-
-Note for anyone upgrading a local install: the identifier changed from `in.reviveai.console` to `com.reviveai.app`, which moves the application-data directory. An earlier local database is not migrated; point `REVIVEAI_DB_PATH` at the old file if you want to keep it.
+Note for anyone upgrading a local install: the `identifier` determines the application-data directory, so changing it moves the database. A database written under an earlier identifier is not migrated; point `REVIVEAI_DB_PATH` at the old file if you want to keep it.
 
 ## Built With
 
@@ -246,7 +225,7 @@ On first run against an empty store the engine ingests twelve failed payments an
 
 The app has been built and run on **Linux** with Node.js, pnpm, Rust and Tauri: the frontend typechecks and bundles, the Rust crate compiles, `cargo test` passes over the engine, the store and the migrations, and the desktop shell starts against a real SQLite database with the demo dataset seeded through the live ingest path.
 
-**Windows and macOS builds will be validated before release.** Nothing in the code is platform-specific — the store resolves its own path from the OS application-data directory, and the only Windows-only line is the release-mode `windows_subsystem` attribute in `main.rs` — but neither bundle has been produced yet, so treat the installer names in the Releases table above as intended rather than tested.
+**The Windows installer will be validated before release.** Nothing in the code is platform-specific — the store resolves its own path from the OS application-data directory, and the only Windows-only line is the release-mode `windows_subsystem` attribute in `main.rs` — but the NSIS bundle has not been produced yet, so treat the installer name in the Releases table above as intended rather than tested. `.github/workflows/release.yml` on `windows-latest` is what will confirm it.
 
 Alongside the build, the project is held together by scripted consistency checks worth knowing about: the sixteen `generate_handler!` names match the adapter's command list exactly; every `module::item` call resolves to a declared public item; every table and column named in SQL exists in the schema; and the serde field names on every Rust struct match the TypeScript interface it crosses the bridge as. Those four invariants are the ones that break silently when the two halves of the app drift apart, which is why they are checked rather than assumed.
 
