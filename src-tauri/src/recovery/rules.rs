@@ -348,10 +348,19 @@ pub fn sla_minutes(payment: &FailedPayment, action: &RecoveryAction) -> i64 {
         window
     };
 
-    // A job must outlive its own first action. Without this a payday retry —
-    // which can legitimately be four weeks out — would be born past its SLA and
-    // show up on the dashboard as expired before it had ever been tried.
-    window.max(action.delay_minutes + DAY)
+    // A job must outlive its own first action — but only an action scheduled
+    // *outside* the window needs that help. A payday retry can legitimately be
+    // four weeks out, and without this it would be born past its SLA and show
+    // on the dashboard as expired before it had ever been tried.
+    //
+    // Applying the grace period unconditionally was a bug: a 90-minute downtime
+    // retry stretched the one-day window to 1,530 minutes, which meant the
+    // per-reason policy above was never the number it claimed to be.
+    if action.delay_minutes >= window {
+        action.delay_minutes + DAY
+    } else {
+        window
+    }
 }
 
 /// Salary credits in India cluster on the 1st and, for many employers, the last
@@ -757,5 +766,29 @@ mod tests {
         subscription.is_subscription = true;
         let (_, action) = evaluate(&subscription).unwrap();
         assert_eq!(sla_minutes(&subscription, &action), WEEK);
+    }
+
+    #[test]
+    fn only_an_action_scheduled_past_the_window_extends_it() {
+        // A downtime retry fires 90 minutes in, well inside its one-day window,
+        // so the SLA is the policy number and nothing more. The grace period
+        // must not quietly add a day to every job that has any delay at all.
+        let downtime = payment(FailureReason::BankDowntime);
+        let (_, action) = evaluate(&downtime).unwrap();
+        assert_eq!(action.delay_minutes, 90);
+        assert_eq!(sla_minutes(&downtime, &action), DAY);
+
+        // A payday retry a month out is the case the grace period exists for:
+        // the window stretches to a day past the action rather than expiring
+        // before the engine has tried anything.
+        let mut payday = payment(FailureReason::InsufficientFunds);
+        payday.failed_at = "2026-08-03T13:05:00.000Z".into();
+        let (_, action) = evaluate(&payday).unwrap();
+        assert!(action.delay_minutes > 3 * DAY);
+        assert_eq!(
+            sla_minutes(&payday, &action),
+            action.delay_minutes + DAY,
+            "a retry scheduled past the window must carry the window with it"
+        );
     }
 }
