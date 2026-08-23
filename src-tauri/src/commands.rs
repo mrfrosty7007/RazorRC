@@ -16,7 +16,7 @@
 //!   against a local SQLite file; moving them onto the async runtime would add a
 //!   thread hop and a `Send` bound for no measurable gain.
 
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::db::{audit, jobs, metrics, playbooks};
 use crate::domain::{
@@ -146,6 +146,31 @@ pub fn set_playbook_enabled(
     to_command(state.write(|transaction| {
         playbooks::set_enabled(transaction, &playbook_id, enabled, state.operator())
     }))
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopilotStatus { configured: bool, model: &'static str }
+
+#[tauri::command]
+pub fn get_copilot_status() -> CopilotStatus {
+    CopilotStatus { configured: crate::copilot::configured(), model: "Gemini 2.5 Flash" }
+}
+
+/// Streams text as `copilot:stream` events. This command only reads recovery
+/// records; it never invokes the recovery engine or changes a playbook.
+#[tauri::command]
+pub async fn stream_copilot_answer(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request_id: String,
+    prompt: String,
+    job_ids: Vec<String>,
+) -> CommandResult<()> {
+    let jobs = state.read(|connection| {
+        job_ids.iter().filter_map(|id| jobs::get(connection, id).transpose()).collect()
+    }).map_err(|error| error.to_string())?;
+    crate::copilot::stream(app, request_id, prompt, jobs).await
 }
 
 // ---------------------------------------------------------------------------

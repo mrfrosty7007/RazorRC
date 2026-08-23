@@ -142,11 +142,21 @@ export function RecoveryQueuePage() {
     (jobId: string) => data.recovery.approveRecommendedAction(jobId),
     refreshAll,
   );
-  const [retryNow] = useAction((jobId: string) => data.recovery.retryNow(jobId), refreshAll);
-  const [suppress] = useAction(
+  const [retryNow, retryState] = useAction(
+    (jobId: string) => data.recovery.retryNow(jobId),
+    refreshAll,
+  );
+  const [suppress, suppressState] = useAction(
     (jobId: string) => data.recovery.suppressJob(jobId, 'Stopped from the recovery queue'),
     refreshAll,
   );
+
+  // One drawer, three writes, one place to report them. Keeping only the
+  // approve state meant a failed "Retry now" or "Stop automation" looked
+  // exactly like a successful one.
+  const actionPendingId =
+    approveState.pendingId ?? retryState.pendingId ?? suppressState.pendingId;
+  const actionError = approveState.error ?? retryState.error ?? suppressState.error;
 
   const total = page.data?.total ?? 0;
   const hasFilters =
@@ -263,8 +273,8 @@ export function RecoveryQueuePage() {
       <JobDetailDrawer
         job={detail.data}
         onClose={() => openJob(null)}
-        pendingId={approveState.pendingId}
-        error={approveState.error}
+        pendingId={actionPendingId}
+        error={actionError}
         onApprove={(job) => void approve(job.id, job.id)}
         onRetryNow={(job) => void retryNow(job.id, job.id)}
         onSuppress={(job) => void suppress(job.id, job.id)}

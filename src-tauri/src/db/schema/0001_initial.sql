@@ -37,8 +37,10 @@ CREATE TABLE customers (
 CREATE TABLE failed_payments (
   id                  TEXT    PRIMARY KEY,
   -- `pay_...`, unique per attempt. The UNIQUE constraint is what makes webhook
-  -- redelivery safe: Razorpay retries `payment.failed`, and an INSERT OR IGNORE
-  -- against this column is the whole of our idempotency story.
+  -- redelivery safe: Razorpay retries `payment.failed`, and `jobs::ingest`
+  -- checks this column — and the primary key, which a redelivery also repeats —
+  -- before writing. Deliberately not an `INSERT OR IGNORE`: that would absorb
+  -- every CHECK below as well, and report a dropped payment as a duplicate.
   razorpay_payment_id TEXT    NOT NULL UNIQUE,
   -- `order_...`, stable across retries of the same order.
   razorpay_order_id   TEXT    NOT NULL,

@@ -145,15 +145,39 @@ pub fn count_by_status(connection: &Connection, statuses: &[RecoveryStatus]) -> 
 /// Idempotent on `razorpay_payment_id`, because Razorpay redelivers webhooks and
 /// a double-ingest would mean a second recovery job chasing the same rupees.
 /// Returns the job id, or `None` when the payment was already known.
+///
+/// Redelivery is detected by an explicit lookup rather than by `INSERT OR
+/// IGNORE`. The blanket form absorbs *every* constraint failure, so a payment
+/// with a zero amount, an unrecognised method or an unparseable reason was
+/// silently discarded and reported back to the caller as an already-seen
+/// webhook — the one outcome an ingest must never confuse with success, because
+/// it turns dropped revenue into a line that reads like a clean no-op. With the
+/// check hoisted out, a genuine redelivery still returns `None` and a malformed
+/// payment now raises.
+///
+/// An `ON CONFLICT (razorpay_payment_id) DO NOTHING` upsert would also fix that
+/// much, since CHECK constraints are evaluated before uniqueness ones. It was
+/// not used for two reasons. It absorbs only the constraint it names, and it
+/// survives a redelivery — which repeats the primary key too — solely because
+/// SQLite happens to test the named constraint before the table's other unique
+/// indexes; that ordering is an implementation detail, not a documented
+/// guarantee, and this file is the money ledger. And it still raises if a row id
+/// is ever reused under a different `razorpay_payment_id`. The lookup below
+/// depends on neither, and says plainly what it is doing.
 pub fn ingest(
     transaction: &Transaction<'_>,
     payment: &FailedPayment,
     actor: Actor,
 ) -> EngineResult<Option<String>> {
-    let inserted = transaction.execute(
-        "INSERT OR IGNORE INTO customers
+    // `customers` has one uniqueness constraint, so this target is unambiguous.
+    // Known customer: keep the value counters current, they feed scoring.
+    transaction.execute(
+        "INSERT INTO customers
            (id, name, email, phone_masked, lifetime_value_paise, successful_payments)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT (id) DO UPDATE SET
+           lifetime_value_paise = excluded.lifetime_value_paise,
+           successful_payments = excluded.successful_payments",
         params![
             payment.customer.id,
             payment.customer.name,
@@ -164,22 +188,24 @@ pub fn ingest(
         ],
     )?;
 
-    if inserted == 0 {
-        // Known customer: keep the value counters current, they feed scoring.
-        transaction.execute(
-            "UPDATE customers
-                SET lifetime_value_paise = ?2, successful_payments = ?3
-              WHERE id = ?1",
-            params![
-                payment.customer.id,
-                payment.customer.lifetime_value_paise,
-                payment.customer.successful_payments,
-            ],
-        )?;
+    // Both keys, because `failed_payments` is unique on its primary key and on
+    // `razorpay_payment_id` and a redelivery repeats both. The read and the
+    // write share this transaction, and the store serialises writers, so nothing
+    // can slip between them.
+    let known: bool = transaction.query_row(
+        "SELECT EXISTS (
+           SELECT 1 FROM failed_payments WHERE razorpay_payment_id = ?1 OR id = ?2
+         )",
+        params![payment.razorpay_payment_id, payment.id],
+        |row| row.get(0),
+    )?;
+
+    if known {
+        return Ok(None);
     }
 
-    let new_payment = transaction.execute(
-        "INSERT OR IGNORE INTO failed_payments
+    transaction.execute(
+        "INSERT INTO failed_payments
            (id, razorpay_payment_id, razorpay_order_id, customer_id, amount_paise, method,
             card_network, issuer, failure_reason, gateway_description, failed_at,
             attempt_count, is_subscription)
@@ -200,10 +226,6 @@ pub fn ingest(
             payment.is_subscription,
         ],
     )?;
-
-    if new_payment == 0 {
-        return Ok(None);
-    }
 
     let (scored, action) = rules::evaluate(payment)?;
     let sla_minutes = rules::sla_minutes(payment, &action);
@@ -750,6 +772,47 @@ mod tests {
 
         let all = list(&connection, &QueueFilters::default(), &page()).unwrap();
         assert_eq!(all.total, 2);
+    }
+
+    #[test]
+    fn a_redelivery_under_a_new_row_id_is_still_absorbed() {
+        let store = store_with_two_jobs();
+        let mut connection = store.lock().unwrap();
+        let transaction = connection.transaction().unwrap();
+
+        // Same Razorpay payment, different local row id — what a re-import or a
+        // replayed webhook batch looks like. The natural key still wins.
+        let mut again = payment(1, FailureReason::GatewayTimeout, 1_20_000);
+        again.id = "fp_9999".into();
+
+        assert_eq!(ingest(&transaction, &again, Actor::engine()).unwrap(), None);
+        transaction.commit().unwrap();
+
+        assert_eq!(
+            list(&connection, &QueueFilters::default(), &page())
+                .unwrap()
+                .total,
+            2
+        );
+    }
+
+    #[test]
+    fn a_malformed_payment_is_rejected_rather_than_reported_as_a_duplicate() {
+        let store = Store::in_memory().unwrap();
+        let mut connection = store.lock().unwrap();
+        let transaction = connection.transaction().unwrap();
+
+        // A zero-amount payment violates `amount_paise > 0`. Under `INSERT OR
+        // IGNORE` this returned `Ok(None)` — indistinguishable from a webhook
+        // Razorpay had already sent us, so real revenue vanished silently.
+        let mut broken = payment(1, FailureReason::DoNotHonour, 1_20_000);
+        broken.amount_paise = 0;
+
+        let rejected = ingest(&transaction, &broken, Actor::engine());
+        assert!(
+            rejected.is_err(),
+            "a payment that breaks a CHECK constraint was swallowed: {rejected:?}"
+        );
     }
 
     #[test]

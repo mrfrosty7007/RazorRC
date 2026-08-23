@@ -159,7 +159,12 @@ export const FUNNEL_STAGES: Record<FunnelStage, LabelSpec> = {
   recovered: { label: 'Recovered', tone: 'mint', hint: 'Back in your account' },
   in_flight: { label: 'In flight', tone: 'azure', hint: 'Engine is actively working these' },
   awaiting_customer: { label: 'Awaiting customer', tone: 'amber', hint: 'Needs a customer action' },
-  at_risk: { label: 'Still at risk', tone: 'coral', hint: 'No action taken yet' },
+  // Deliberately not "Still at risk". The funnel splits the window's failed
+  // money into disjoint stages, so this one covers only queued, stalled and
+  // suppressed jobs — while the "Revenue at risk" KPI beside it also counts
+  // everything in flight and everything awaiting a customer. Two different
+  // numbers under near-identical labels is a reconciliation trap.
+  at_risk: { label: 'Not yet actioned', tone: 'coral', hint: 'Queued, stalled or stopped — nothing in flight' },
   written_off: { label: 'Written off', tone: 'neutral', hint: 'Recovery window closed' },
 };
 

@@ -19,7 +19,10 @@ export function Meter({
   className,
   'aria-label': ariaLabel,
 }: MeterProps) {
-  const clamped = Math.min(1, Math.max(0, value));
+  // `Math.min`/`Math.max` propagate NaN, which would reach the DOM as
+  // `aria-valuenow="NaN"` and a `width: NaN%` style. An unreadable rate is
+  // drawn as an empty bar.
+  const clamped = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
 
   return (
     <div className={cn('flex items-center gap-2', className)}>
@@ -38,7 +41,7 @@ export function Meter({
       </div>
       {showLabel ? (
         <span className="w-11 shrink-0 text-right font-mono text-micro text-content-muted">
-          {formatPercent(clamped, 0)}
+          {formatPercent(Number.isFinite(value) ? clamped : value, 0)}
         </span>
       ) : null}
     </div>
@@ -51,8 +54,9 @@ export function Meter({
  * precision than it has.
  */
 export function ScoreTicks({ value, className }: { value: number; className?: string }) {
-  const filled = Math.round(Math.min(1, Math.max(0, value)) * 10);
-  const tone: Tone = value >= 0.66 ? 'mint' : value >= 0.4 ? 'amber' : 'coral';
+  const score = Number.isFinite(value) ? value : 0;
+  const filled = Math.round(Math.min(1, Math.max(0, score)) * 10);
+  const tone: Tone = score >= 0.66 ? 'mint' : score >= 0.4 ? 'amber' : 'coral';
 
   return (
     <div className={cn('flex items-center gap-2', className)}>

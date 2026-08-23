@@ -1,5 +1,5 @@
 import { AlertTriangle } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { FailureBreakdown, MethodBreakdown } from '@/domain';
 import { FAILURE_REASONS, PAYMENT_METHODS } from '@/domain';
 import { data } from '@/data';
@@ -138,6 +138,7 @@ export function AnalyticsPage() {
                 getRowId={(row) => row.reason}
                 loading={reasons.loading}
                 density="compact"
+                empty={<TableEmpty>No failures recorded in the last {windowDays} days.</TableEmpty>}
               />
             </div>
           </div>
@@ -175,6 +176,7 @@ export function AnalyticsPage() {
                 getRowId={(row) => row.method}
                 loading={methods.loading}
                 density="compact"
+                empty={<TableEmpty>No payments on any rail in the last {windowDays} days.</TableEmpty>}
               />
             </div>
           </Panel>
@@ -326,4 +328,9 @@ function Legend({ color, label }: { color: string; label: string }) {
       {label}
     </li>
   );
+}
+
+/** Keeps the panel the same height when a window has no rows in it. */
+function TableEmpty({ children }: { children: ReactNode }) {
+  return <p className="px-4 py-10 text-center text-xs text-content-faint">{children}</p>;
 }

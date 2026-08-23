@@ -1,47 +1,25 @@
-/**
- * Copilot port.
- *
- * Phase 1 ships no model provider, and deliberately ships no simulated
- * conversation either: a fake assistant would make the engine's real,
- * explainable output look like the same kind of guesswork. The composer reads
- * this status and tells the user exactly what is missing instead.
- *
- * Phase 2 registers a provider that satisfies `CopilotProvider` and the
- * composer starts working with no changes to the surrounding screen.
- */
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
+import { isTauri } from '@/data';
 
-export type CopilotAvailability =
-  | { status: 'not_configured'; missing: string[] }
-  | { status: 'ready'; model: string }
-  | { status: 'error'; message: string };
+export interface CopilotStatus { configured: boolean; model: string; }
+export interface CopilotQuestion { prompt: string; jobIds: string[]; }
+export interface CopilotStreamEvent { requestId: string; kind: 'delta' | 'complete'; text: string | null; message: string | null; }
 
-export interface CopilotQuestion {
-  prompt: string;
-  /** Job ids the question is scoped to, so answers can cite them. */
-  jobIds: string[];
+/** The credential stays behind Tauri IPC; this module never reads `.env`. */
+export async function getCopilotStatus(): Promise<CopilotStatus> {
+  if (!isTauri()) return { configured: false, model: 'Gemini 2.5 Flash' };
+  return invoke<CopilotStatus>('get_copilot_status');
 }
 
-export interface CopilotAnswer {
-  text: string;
-  citedJobIds: string[];
+/** Subscribe before invoking so early Gemini tokens cannot be lost. */
+export async function streamCopilotAnswer(question: CopilotQuestion, onEvent: (event: CopilotStreamEvent) => void): Promise<void> {
+  const requestId = crypto.randomUUID();
+  let unlisten: UnlistenFn | undefined;
+  try {
+    unlisten = await listen<CopilotStreamEvent>('copilot:stream', (event) => {
+      if (event.payload.requestId === requestId) onEvent(event.payload);
+    });
+    await invoke<void>('stream_copilot_answer', { requestId, prompt: question.prompt, jobIds: question.jobIds });
+  } finally { unlisten?.(); }
 }
-
-export interface CopilotProvider {
-  availability(): CopilotAvailability;
-  ask(question: CopilotQuestion): Promise<CopilotAnswer>;
-}
-
-export class CopilotNotConfiguredError extends Error {
-  constructor(readonly missing: string[]) {
-    super(`Copilot provider is not configured. Missing: ${missing.join(', ')}`);
-    this.name = 'CopilotNotConfiguredError';
-  }
-}
-
-const MISSING_KEYS = ['COPILOT_PROVIDER', 'COPILOT_API_KEY'];
-
-/** Default provider: honest about being absent. */
-export const copilot: CopilotProvider = {
-  availability: () => ({ status: 'not_configured', missing: MISSING_KEYS }),
-  ask: () => Promise.reject(new CopilotNotConfiguredError(MISSING_KEYS)),
-};

@@ -19,7 +19,11 @@ interface DataTableProps<T> {
   rows: T[];
   getRowId: (row: T) => string;
   loading?: boolean;
-  /** Rendered in place of the tbody when there are no rows. */
+  /**
+   * Rendered in place of the tbody when there are no rows. Omitting it falls
+   * back to a plain line of text rather than nothing — a table that collapses to
+   * zero pixels reads as a broken page, not as an empty result.
+   */
   empty?: ReactNode;
   onRowClick?: (row: T) => void;
   activeRowId?: string | null;
@@ -55,7 +59,13 @@ export function DataTable<T>({
   }
 
   if (rows.length === 0) {
-    return <>{empty}</>;
+    return (
+      <>
+        {empty ?? (
+          <p className="px-4 py-8 text-center text-xs text-content-faint">Nothing to show here.</p>
+        )}
+      </>
+    );
   }
 
   const cellPadding = density === 'compact' ? 'px-4 py-2' : 'px-4 py-2.5';

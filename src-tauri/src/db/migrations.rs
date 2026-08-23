@@ -36,6 +36,13 @@ const BOOKKEEPING: &str = "CREATE TABLE IF NOT EXISTS schema_migrations (
   applied_at TEXT NOT NULL
 ) STRICT;";
 
+/// The newest schema version this build knows how to produce.
+pub fn latest_version() -> i64 {
+    MIGRATIONS
+        .last()
+        .map_or(0, |migration| migration.version)
+}
+
 /// Brings `connection` up to the latest version, returning the versions that
 /// this call actually applied. An already-current database returns an empty
 /// vector and touches nothing.
@@ -43,6 +50,21 @@ pub fn apply(connection: &mut Connection) -> EngineResult<Vec<i64>> {
     connection.execute_batch(BOOKKEEPING).map_err(|cause| {
         EngineError::Store(format!("could not create the migration table: {cause}"))
     })?;
+
+    // A file written by a newer build must not be opened by an older one.
+    // Migrations are forward-only, so without this check the old binary finds
+    // every version it knows about already recorded, applies nothing, reports
+    // success — and then reads and writes a money ledger through a schema it
+    // does not understand. Refusing to open is recoverable; that is not.
+    let found = current_version(connection)?;
+    let latest = latest_version();
+    if found > latest {
+        return Err(EngineError::Store(format!(
+            "this file was created by a newer version of ReviveAI (schema v{found}; \
+             this build understands v{latest}). Update ReviveAI, or move the existing \
+             database aside to start with a fresh one."
+        )));
+    }
 
     let mut applied = Vec::new();
 
@@ -183,6 +205,39 @@ mod tests {
         let connection = Connection::open_in_memory().unwrap();
         connection.execute_batch(BOOKKEEPING).unwrap();
         assert_eq!(current_version(&connection).unwrap(), 0);
+    }
+
+    #[test]
+    fn the_latest_version_is_the_last_migration() {
+        assert_eq!(latest_version(), MIGRATIONS.last().unwrap().version);
+    }
+
+    #[test]
+    fn a_database_from_a_newer_build_is_refused() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        apply(&mut connection).unwrap();
+
+        // Stand in for a later release having migrated this file, then a user
+        // reinstalling the older build over the top of it.
+        connection
+            .execute(
+                "INSERT INTO schema_migrations (version, name, applied_at)
+                 VALUES (?1, 'from-a-later-release', '2027-01-01T00:00:00.000Z')",
+                params![latest_version() + 1],
+            )
+            .unwrap();
+
+        let refused = apply(&mut connection);
+        assert!(
+            refused.is_err(),
+            "an older build opened a database it does not understand"
+        );
+
+        let message = refused.unwrap_err().to_string();
+        assert!(
+            message.contains("newer version") && message.contains("Update ReviveAI"),
+            "the error does not tell the merchant what to do: {message}"
+        );
     }
 
     #[test]

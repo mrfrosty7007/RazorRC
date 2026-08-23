@@ -192,11 +192,11 @@ function decide(payment: FailedPayment): Decision {
       return { reason: 'send_payment_link', delayMinutes: 30, label: 'Send a new UPI request' };
 
     case 'insufficient_funds': {
-      const minutes = minutesToNextPayday(payment.failedAt);
+      const { delayMinutes, target } = paydayPlan(payment.failedAt);
       return {
         reason: 'retry_on_payday',
-        delayMinutes: minutes,
-        label: `Retry on ${paydayLabel(payment.failedAt)}`,
+        delayMinutes,
+        label: `Retry on ${dayMonthLabel(target)}`,
       };
     }
 
@@ -225,8 +225,12 @@ function decide(payment: FailedPayment): Decision {
  * Salary credits in India cluster on the 1st and, for many employers, the last
  * working day of the month. Retrying insufficient-funds failures into that
  * window is the single highest-yield rule in the engine.
+ *
+ * Returns the delay and the instant it lands on together, mirroring
+ * `payday_plan` in `rules.rs`, so the label and the schedule are derived from
+ * one calculation and cannot disagree.
  */
-function minutesToNextPayday(failedAt: string): number {
+function paydayPlan(failedAt: string): { delayMinutes: number; target: Date } {
   const failed = new Date(failedAt);
   const payday = new Date(failed);
   payday.setUTCHours(6, 30, 0, 0);
@@ -234,15 +238,46 @@ function minutesToNextPayday(failedAt: string): number {
   if (failed.getUTCDate() >= 1 && failed.getUTCDate() <= 2) {
     payday.setUTCDate(failed.getUTCDate() + 1);
   } else {
+    // Month and day are set in one call so a 31st never overflows into the
+    // month after next.
     payday.setUTCMonth(payday.getUTCMonth() + 1, 1);
   }
 
-  return Math.max(60, Math.round((payday.getTime() - failed.getTime()) / 60_000));
+  const delayMinutes = Math.max(60, Math.round((payday.getTime() - failed.getTime()) / 60_000));
+  return { delayMinutes, target: new Date(failed.getTime() + delayMinutes * 60_000) };
 }
 
-function paydayLabel(failedAt: string): string {
-  const target = new Date(new Date(failedAt).getTime() + minutesToNextPayday(failedAt) * 60_000);
-  return new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short' }).format(target);
+/** `month_abbreviation` in `src-tauri/src/clock.rs`, not the runtime's locale data. */
+const MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
+/**
+ * Day and abbreviated month in UTC, e.g. `1 Sep`.
+ *
+ * Deliberately not `Intl.DateTimeFormat('en-IN', { month: 'short' })`, which
+ * this used to be, for two reasons. It formats in the *runtime's* timezone while
+ * the retry is scheduled in UTC, so anywhere west of UTC-6:30 the label named
+ * the day before the one the job actually fires on — the label and the schedule
+ * contradicting each other, which is the whole thing `paydayPlan` returning both
+ * values is meant to prevent. And current ICU renders September as "Sept" under
+ * `en-IN`, so the browser said "1 Sept" where the Rust engine said "1 Sep": the
+ * same payment, two different recommendations, depending on which build of which
+ * runtime happened to load the page.
+ */
+function dayMonthLabel(target: Date): string {
+  return `${target.getUTCDate()} ${MONTHS[target.getUTCMonth()]}`;
 }
 
 export function clamp(value: number, min: number, max: number): number {

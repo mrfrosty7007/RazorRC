@@ -1,7 +1,7 @@
 import { ArrowRight, IndianRupee, Percent, TrendingDown, Workflow } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { QueueFilters, RecoveryJob, RecoveryStatus } from '@/domain';
+import type { QueueFilters, RecoveryStatus } from '@/domain';
 import { data } from '@/data';
 import { useQuery } from '@/hooks/useQuery';
 import { useAction } from '@/hooks/useAction';
@@ -55,7 +55,7 @@ function openJobFilters(): QueueFilters {
 export function DashboardPage() {
   const navigate = useNavigate();
   const [windowDays, setWindowDays] = useState(14);
-  const [selectedJob, setSelectedJob] = useState<RecoveryJob | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const metrics = useQuery(() => data.metrics.getDashboardMetrics(windowDays), [windowDays]);
   const trend = useQuery(() => data.metrics.getTrend(windowDays), [windowDays]);
@@ -71,21 +71,45 @@ export function DashboardPage() {
     [],
   );
 
+  // Read by id rather than kept as a snapshot of the clicked row: approving an
+  // action changes the job's status, and a drawer still offering "Approve" on a
+  // job that is already scheduled invites a duplicate charge.
+  const detail = useQuery(
+    () => (selectedId ? data.recovery.getJob(selectedId) : Promise.resolve(null)),
+    [selectedId],
+  );
+
+  // Every panel on this page is downstream of the recovery store, so a write
+  // has to refresh all of them. Leaving the trend or the insights out was the
+  // subtler kind of stale: the KPI moved and the chart above it did not.
   const refreshAll = useCallback(() => {
     metrics.refetch();
+    trend.refetch();
+    insights.refetch();
     priority.refetch();
     activity.refetch();
-  }, [metrics, priority, activity]);
+    detail.refetch();
+  }, [metrics, trend, insights, priority, activity, detail]);
 
   const [approve, approveState] = useAction(
     (jobId: string) => data.recovery.approveRecommendedAction(jobId),
     refreshAll,
   );
-  const [retryNow] = useAction((jobId: string) => data.recovery.retryNow(jobId), refreshAll);
-  const [suppress] = useAction(
+  const [retryNow, retryState] = useAction(
+    (jobId: string) => data.recovery.retryNow(jobId),
+    refreshAll,
+  );
+  const [suppress, suppressState] = useAction(
     (jobId: string) => data.recovery.suppressJob(jobId, 'Stopped from the dashboard'),
     refreshAll,
   );
+
+  // The drawer shows one action at a time, so whichever write is in flight or
+  // has just failed is the one to report. Dropping the retry and suppress
+  // states made a rejected write look like a silent success.
+  const actionPendingId =
+    approveState.pendingId ?? retryState.pendingId ?? suppressState.pendingId;
+  const actionError = approveState.error ?? retryState.error ?? suppressState.error;
 
   const series = useMemo(() => trend.data ?? [], [trend.data]);
   const kpi = metrics.data;
@@ -246,8 +270,8 @@ export function DashboardPage() {
               jobs={priority.data?.rows ?? []}
               loading={priority.loading}
               variant="compact"
-              onSelect={setSelectedJob}
-              activeJobId={selectedJob?.id ?? null}
+              onSelect={(job) => setSelectedId(job.id)}
+              activeJobId={selectedId}
             />
           </Panel>
 
@@ -260,10 +284,10 @@ export function DashboardPage() {
       </div>
 
       <JobDetailDrawer
-        job={selectedJob}
-        onClose={() => setSelectedJob(null)}
-        pendingId={approveState.pendingId}
-        error={approveState.error}
+        job={detail.data}
+        onClose={() => setSelectedId(null)}
+        pendingId={actionPendingId}
+        error={actionError}
         onApprove={(job) => void approve(job.id, job.id)}
         onRetryNow={(job) => void retryNow(job.id, job.id)}
         onSuppress={(job) => void suppress(job.id, job.id)}

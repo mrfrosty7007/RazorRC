@@ -10,6 +10,7 @@
 
 pub mod bootstrap;
 pub mod clock;
+pub mod copilot;
 pub mod commands;
 pub mod db;
 pub mod domain;
@@ -77,6 +78,8 @@ pub fn run() {
             commands::list_insights,
             commands::list_playbooks,
             commands::set_playbook_enabled,
+            commands::get_copilot_status,
+            commands::stream_copilot_answer,
             commands::list_audit_events,
             commands::get_engine_status,
             commands::get_merchant,

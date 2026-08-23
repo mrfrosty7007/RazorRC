@@ -61,6 +61,37 @@ pub fn iso_days_ago(days: f64) -> String {
     to_iso(now() - time::Duration::seconds_f64(days * 86_400.0))
 }
 
+/// Midnight UTC at the head of a `days`-long window ending today.
+///
+/// Every window in this app is whole calendar days, not a rolling `days × 24h`,
+/// and they all start here so that they cannot disagree. They used to: the trend
+/// chart bucketed by calendar day while the KPI cards above it measured a
+/// rolling window, so a failure from the small hours of the oldest day counted
+/// towards "revenue at risk" but had no bar to sit in — a card and the chart
+/// beside it differed by a whole job, with no way for a merchant to tell which
+/// one was lying.
+pub fn iso_window_start(days: u32) -> String {
+    let first_day = iso_days_ago(f64::from(days.max(1) - 1));
+    format!("{}T00:00:00.000Z", day_key(&first_day))
+}
+
+/// The `YYYY-MM-DD` keys of a `days`-long window ending today, oldest first.
+///
+/// One clock read for the whole series. Deriving the bucket keys and the range
+/// predicate from separate reads of `now()` would let them straddle a midnight
+/// and disagree about which day the window opens on — rare, but it would present
+/// as a chart that silently drops its oldest bar.
+pub fn window_day_keys(days: u32) -> Vec<String> {
+    let base = now();
+    (0..days.max(1))
+        .rev()
+        .map(|offset| {
+            let at = base - time::Duration::seconds_f64(f64::from(offset) * 86_400.0);
+            to_iso(at)[..10].to_string()
+        })
+        .collect()
+}
+
 /// The `YYYY-MM-DD` prefix, used as the trend chart's bucket key.
 pub fn day_key(iso: &str) -> &str {
     if iso.len() >= 10 {
@@ -171,6 +202,61 @@ mod tests {
     fn day_key_is_the_date_prefix() {
         assert_eq!(day_key("2026-08-22T11:40:00.000Z"), "2026-08-22");
         assert_eq!(day_key("short"), "short");
+    }
+
+    #[test]
+    fn a_window_starts_at_midnight_on_its_oldest_day() {
+        let start = iso_window_start(7);
+        assert!(start.ends_with("T00:00:00.000Z"), "{start}");
+        // The oldest bucket the trend chart draws is `days - 1` days back, and
+        // the window has to begin there or the chart loses a bar the KPI counted.
+        assert_eq!(day_key(&start), day_key(&iso_days_ago(6.0)));
+    }
+
+    #[test]
+    fn a_window_of_one_day_is_today() {
+        assert_eq!(day_key(&iso_window_start(1)), day_key(&now_iso()));
+        // Zero is coerced to one rather than underflowing.
+        assert_eq!(iso_window_start(0), iso_window_start(1));
+    }
+
+    #[test]
+    fn the_previous_window_abuts_the_current_one() {
+        // How the dashboard builds its deltas: doubling the window and taking
+        // everything before the current start must give an equal-length window.
+        let current = iso_window_start(7);
+        let previous = iso_window_start(14);
+        assert!(previous < current, "{previous} should precede {current}");
+        assert_eq!(day_key(&previous), day_key(&iso_days_ago(13.0)));
+    }
+
+    #[test]
+    fn window_day_keys_agree_with_the_window_start() {
+        let keys = window_day_keys(30);
+        assert_eq!(keys.len(), 30);
+        assert_eq!(keys.last().unwrap(), day_key(&now_iso()));
+
+        // The trend chart derives its range predicate from the oldest key, so
+        // this is the equality the two definitions rest on.
+        assert_eq!(
+            format!("{}T00:00:00.000Z", keys[0]),
+            iso_window_start(30),
+            "the oldest bucket and the window start disagree"
+        );
+    }
+
+    #[test]
+    fn window_day_keys_ascend_without_gaps() {
+        let keys = window_day_keys(14);
+        assert!(
+            keys.windows(2).all(|pair| pair[0] < pair[1]),
+            "keys are not strictly ascending: {keys:?}"
+        );
+        // Zero-filling the chart depends on there being no duplicate days.
+        assert_eq!(
+            keys.iter().collect::<std::collections::HashSet<_>>().len(),
+            keys.len()
+        );
     }
 
     #[test]

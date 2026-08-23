@@ -1,4 +1,4 @@
-import { ChevronDown, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { Badge, Button } from '@/components/ui';
 import { useSession } from '@/app/SessionContext';
@@ -18,10 +18,15 @@ export function Topbar() {
   return (
     <header className="flex h-topbar shrink-0 items-center justify-between gap-4 border-b border-hairline bg-surface px-4">
       <div className="flex min-w-0 items-center gap-3">
-        <button
-          type="button"
-          className="flex min-w-0 items-center gap-2 rounded-control px-2 py-1 text-left hover:bg-raised"
-          aria-label="Switch merchant account"
+        {/*
+          Identity, not a switcher. The console is scoped to the Razorpay account
+          whose keys are in the local config, so there is nothing to switch to —
+          and a button that announces itself to a screen reader and then does
+          nothing is worse than a label.
+        */}
+        <div
+          className="flex min-w-0 items-center gap-2 rounded-control px-2 py-1"
+          title="The Razorpay account these keys belong to"
         >
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[0.25rem] border border-hairline-strong bg-raised font-mono text-micro font-semibold text-content-muted">
             {merchant ? initials(merchant.name) : '··'}
@@ -34,8 +39,7 @@ export function Topbar() {
               {merchant?.id ?? '—'}
             </span>
           </span>
-          <ChevronDown aria-hidden className="h-3.5 w-3.5 shrink-0 text-content-faint" />
-        </button>
+        </div>
 
         {merchant ? (
           <Badge tone={merchant.mode === 'test' ? 'amber' : 'mint'} className="hidden sm:inline-flex">

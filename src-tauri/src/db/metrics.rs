@@ -39,9 +39,9 @@ impl Totals {
 }
 
 pub fn dashboard(connection: &Connection, window_days: u32) -> EngineResult<DashboardMetrics> {
-    let days = window_days.max(1) as f64;
-    let window_start = clock::iso_days_ago(days);
-    let previous_start = clock::iso_days_ago(days * 2.0);
+    let days = window_days.max(1);
+    let window_start = clock::iso_window_start(days);
+    let previous_start = clock::iso_window_start(days * 2);
 
     let current = totals(connection, &window_start, None)?;
     let previous = totals(connection, &previous_start, Some(&window_start))?;
@@ -150,10 +150,14 @@ fn funnel(connection: &Connection, window_start: &str) -> EngineResult<RecoveryF
 pub fn trend(connection: &Connection, window_days: u32) -> EngineResult<Vec<TrendPoint>> {
     let days = window_days.max(1);
 
-    let mut points: Vec<TrendPoint> = (0..days)
-        .rev()
-        .map(|offset| TrendPoint {
-            date: clock::iso_days_ago(offset as f64)[..10].to_string(),
+    // Bucket keys and the range predicate come from one clock read, and the
+    // predicate is derived from the oldest bucket rather than computed again —
+    // the same window definition the KPI cards use. See `clock::iso_window_start`
+    // for what went wrong when the two were worked out separately.
+    let mut points: Vec<TrendPoint> = clock::window_day_keys(days)
+        .into_iter()
+        .map(|date| TrendPoint {
+            date,
             at_risk_paise: 0,
             recovered_paise: 0,
             recovery_rate: 0.0,
@@ -161,9 +165,6 @@ pub fn trend(connection: &Connection, window_days: u32) -> EngineResult<Vec<Tren
         })
         .collect();
 
-    // Anchored to midnight on the first bucket rather than to "now minus N
-    // days", so a failure from earlier in that first day still lands in a bucket
-    // that exists instead of being grouped into a day the series does not have.
     let window_start = format!("{}T00:00:00.000Z", points[0].date);
 
     let mut by_day = connection.prepare(
@@ -218,7 +219,7 @@ pub fn failure_breakdown(
     connection: &Connection,
     window_days: u32,
 ) -> EngineResult<Vec<FailureBreakdown>> {
-    let window_start = clock::iso_days_ago(window_days.max(1) as f64);
+    let window_start = clock::iso_window_start(window_days.max(1));
     let mut statement = connection.prepare(&breakdown_sql("p.failure_reason"))?;
     let mut rows = statement.query(params![window_start])?;
 
@@ -240,7 +241,7 @@ pub fn method_breakdown(
     connection: &Connection,
     window_days: u32,
 ) -> EngineResult<Vec<MethodBreakdown>> {
-    let window_start = clock::iso_days_ago(window_days.max(1) as f64);
+    let window_start = clock::iso_window_start(window_days.max(1));
     let mut statement = connection.prepare(&breakdown_sql("p.method"))?;
     let mut rows = statement.query(params![window_start])?;
 
@@ -278,11 +279,18 @@ fn breakdown_sql(column: &str) -> String {
 
 /// How well each successive attempt does. Used to argue for a retry budget:
 /// if the fourth attempt recovers nothing, stop paying for it.
+///
+/// Counted on the day the attempt *ran*, which is not the day the payment
+/// failed. Filtering on `failed_at` quietly biased this table against the
+/// strategies it exists to judge: a fourth retry, or a card-update email
+/// answered a week later, happens long after the failure, so on a 7-day window
+/// the slowest and most patient strategies were the ones most likely to fall
+/// outside it — exactly the successes that justify the retry budget.
 pub fn attempt_effectiveness(
     connection: &Connection,
     window_days: u32,
 ) -> EngineResult<Vec<AttemptEffectiveness>> {
-    let window_start = clock::iso_days_ago(window_days.max(1) as f64);
+    let window_start = clock::iso_window_start(window_days.max(1));
 
     let mut buckets: Vec<AttemptEffectiveness> = (1..=MAX_ATTEMPT_BUCKET)
         .map(|attempt| AttemptEffectiveness {
@@ -298,9 +306,7 @@ pub fn attempt_effectiveness(
                 COUNT(*),
                 SUM(CASE WHEN a.outcome = 'succeeded' THEN 1 ELSE 0 END)
            FROM recovery_attempts a
-           JOIN recovery_jobs j ON j.id = a.job_id
-           JOIN failed_payments p ON p.id = j.payment_id
-          WHERE p.failed_at >= ?1 AND a.sequence <= ?2
+          WHERE a.occurred_at >= ?1 AND a.sequence <= ?2
           GROUP BY a.sequence",
     )?;
 
@@ -547,6 +553,85 @@ mod tests {
         assert_eq!(buckets[0].attempt, 1);
         // No attempts have run yet, so every rate is a real zero.
         assert!(buckets.iter().all(|bucket| bucket.recovery_rate == 0.0));
+    }
+
+    /// One millisecond before a `days`-long window opens — i.e. late on the day
+    /// before the oldest bar the trend chart draws. Derived from the clock helper
+    /// rather than hardcoded so the fixture holds at any hour of the day.
+    fn just_before_window(days: u32) -> String {
+        let start = clock::parse_iso(&clock::iso_window_start(days)).unwrap();
+        clock::to_iso(start - time::Duration::milliseconds(1))
+    }
+
+    #[test]
+    fn the_kpi_cards_and_the_trend_cover_the_same_window() {
+        let store = store_with_history();
+        {
+            let mut connection = store.lock().unwrap();
+            let transaction = connection.transaction().unwrap();
+            let mut stray = payment(9, FailureReason::DoNotHonour, 5_00_000, 0.0);
+            stray.failed_at = just_before_window(7);
+            jobs::ingest(&transaction, &stray, Actor::engine()).unwrap();
+            transaction.commit().unwrap();
+        }
+
+        let connection = store.lock().unwrap();
+
+        for window in [7u32, 14, 30] {
+            let metrics = dashboard(&connection, window).unwrap();
+            let summed: i64 = trend(&connection, window)
+                .unwrap()
+                .iter()
+                .map(|point| point.at_risk_paise)
+                .sum();
+
+            assert_eq!(
+                summed, metrics.revenue_at_risk_paise,
+                "{window}D: the trend sums to a different number than the KPI card above it"
+            );
+        }
+
+        // The stray really is outside the short window, so the agreement above is
+        // agreement about a boundary rather than a vacuous match.
+        assert_eq!(dashboard(&connection, 7).unwrap().revenue_at_risk_paise, 4_00_000);
+        assert_eq!(dashboard(&connection, 14).unwrap().revenue_at_risk_paise, 9_00_000);
+    }
+
+    #[test]
+    fn attempt_effectiveness_counts_the_day_the_attempt_ran() {
+        let store = Store::in_memory().unwrap();
+        {
+            let mut connection = store.lock().unwrap();
+            let transaction = connection.transaction().unwrap();
+            // Failed 20 days ago; the payday retry that recovered it ran yesterday.
+            jobs::ingest(
+                &transaction,
+                &payment(1, FailureReason::InsufficientFunds, 3_00_000, 20.0),
+                Actor::engine(),
+            )
+            .unwrap();
+            transaction
+                .execute(
+                    "INSERT INTO recovery_attempts
+                       (id, job_id, sequence, kind, channel, occurred_at, outcome, note)
+                     VALUES ('att_0001', 'job_0001', 2, 'retry_on_payday', 'gateway',
+                             ?1, 'succeeded', '')",
+                    params![clock::iso_days_ago(1.0)],
+                )
+                .unwrap();
+            transaction.commit().unwrap();
+        }
+
+        let connection = store.lock().unwrap();
+        let buckets = attempt_effectiveness(&connection, 7).unwrap();
+
+        let second = &buckets[1];
+        assert_eq!(second.attempt, 2);
+        // Judging the retry budget by the failure date hid the late successes
+        // that are the whole argument for a second attempt.
+        assert_eq!(second.attempted, 1);
+        assert_eq!(second.recovered, 1);
+        assert_eq!(second.recovery_rate, 1.0);
     }
 
     #[test]

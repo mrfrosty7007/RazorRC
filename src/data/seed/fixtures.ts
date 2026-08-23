@@ -152,7 +152,10 @@ function makePayment(n: number): FailedPayment {
         : pick(rng, CARD_ISSUERS),
     failureReason,
     gatewayDescription: GATEWAY_TEXT[failureReason],
-    failedAt: isoDaysAgo(rng() * 13.5),
+    // Spread across the widest window the UI offers. A dataset that only
+    // covers a fortnight makes the 14D and 30D filters return identical
+    // figures, which reads as a broken filter rather than a quiet month.
+    failedAt: isoDaysAgo(rng() * 29.5),
     attemptCount: weighted(rng, [
       [1, 58],
       [2, 26],
@@ -179,6 +182,11 @@ function buildAttempts(job: Omit<RecoveryJob, 'attempts'>): RecoveryAttempt[] {
   const attempts: RecoveryAttempt[] = [];
   const { payment, recommendedAction, status } = job;
   const total = status === 'queued' ? 0 : Math.min(payment.attemptCount, 4);
+  const age = daysSince(payment.failedAt);
+  // One rung every 0.35 days, compressed when the failure is too recent to fit
+  // them all in, so that even a fourth attempt on a payment that failed five
+  // hours ago still lands strictly between the failure and now.
+  const step = Math.min(0.35, age / (total + 1));
 
   for (let i = 0; i < total; i += 1) {
     const isLast = i === total - 1;
@@ -198,9 +206,11 @@ function buildAttempts(job: Omit<RecoveryJob, 'attempts'>): RecoveryAttempt[] {
       sequence: i + 1,
       kind: i === 0 ? 'auto_retry' : recommendedAction.kind,
       channel: i === 0 ? 'gateway' : recommendedAction.channel,
-      occurredAt: isoDaysAgo(
-        Math.max(0.02, daysSince(payment.failedAt) - (total - i) * 0.35),
-      ),
+      // The ladder walks *forward* from the failure: sequence 1 is the oldest.
+      // Dated the other way round, the drawer timeline shows the success above
+      // the failures that led to it, and the analytics buckets — which count an
+      // attempt on the day it ran — put late retries in early days.
+      occurredAt: isoDaysAgo(age - (i + 1) * step),
       outcome,
       note:
         outcome === 'succeeded'
@@ -220,6 +230,27 @@ function buildAttempts(job: Omit<RecoveryJob, 'attempts'>): RecoveryAttempt[] {
 
 function daysSince(iso: string): number {
   return (Date.now() - new Date(iso).getTime()) / 86_400_000;
+}
+
+/**
+ * One definition of "the last N days", used by every windowed figure.
+ *
+ * The window is N calendar days ending today, not an instant N*24h back: the
+ * trend chart has to bucket by date, and if the KPI above it used a rolling
+ * instant the two would disagree by up to a day's worth of failures — which is
+ * the kind of gap a merchant notices when reconciling by hand.
+ */
+function windowStart(windowDays: number): string {
+  return isoDaysAgo(Math.max(0, windowDays - 1)).slice(0, 10);
+}
+
+function inWindow(job: RecoveryJob, windowDays: number): boolean {
+  return job.payment.failedAt.slice(0, 10) >= windowStart(windowDays);
+}
+
+/** Money still in play: recovered is won, written off is lost, the rest is at risk. */
+function isAtRisk(job: RecoveryJob): boolean {
+  return job.status !== 'recovered' && job.status !== 'written_off';
 }
 
 function buildJobs(count: number): RecoveryJob[] {
@@ -305,62 +336,147 @@ export function buildFunnel(jobs: RecoveryJob[]): FunnelSegment[] {
   return order.map((stage) => totals[stage]);
 }
 
-export function buildMetrics(windowDays: number): DashboardMetrics {
-  const jobs = JOBS.filter((j) => daysSince(j.payment.failedAt) <= windowDays);
-  const recoveredPaise = sum(jobs.map((j) => j.recoveredAmountPaise ?? 0));
-  const atRisk = jobs.filter((j) => j.status !== 'recovered' && j.status !== 'written_off');
-  const revenueAtRiskPaise = sum(atRisk.map((j) => j.payment.amountPaise));
-  const denominator = recoveredPaise + revenueAtRiskPaise;
+/** Totals for one window. */
+interface WindowTotals {
+  jobs: RecoveryJob[];
+  failedPaise: number;
+  recoveredPaise: number;
+  atRiskPaise: number;
+  activeJobs: number;
+}
+
+/**
+ * Every windowed figure on the dashboard, built from one pass.
+ *
+ * Shared shape on purpose: a KPI card and the delta underneath it are derived
+ * from the same object, so they can never end up describing different
+ * quantities. `until` is exclusive, which is what makes the previous window abut
+ * the current one exactly.
+ */
+function totals(allJobs: RecoveryJob[], from: string, until: string | null): WindowTotals {
+  const jobs = allJobs.filter((job) => {
+    const day = job.payment.failedAt.slice(0, 10);
+    return day >= from && (until === null || day < until);
+  });
+
+  return {
+    jobs,
+    failedPaise: sum(jobs.map((j) => j.payment.amountPaise)),
+    recoveredPaise: sum(jobs.map((j) => (j.status === 'recovered' ? (j.recoveredAmountPaise ?? 0) : 0))),
+    atRiskPaise: sum(jobs.filter(isAtRisk).map((j) => j.payment.amountPaise)),
+    activeJobs: jobs.filter((j) => ACTIVE.includes(j.status)).length,
+  };
+}
+
+/**
+ * Recovered as a share of everything that failed in the window — written-off
+ * money included.
+ *
+ * Excluding it from the denominator would mean the rate climbed every time the
+ * team gave up on a job, which is precisely backwards. This also matches
+ * `Totals::recovery_rate` in `src-tauri/src/db/metrics.rs`; the two adapters
+ * reporting different rates for the same rows is the sort of discrepancy that
+ * gets noticed in a demo.
+ */
+function recoveryRateOf(window: WindowTotals): number {
+  if (window.failedPaise <= 0) return 0;
+  return Math.min(1, Math.max(0, window.recoveredPaise / window.failedPaise));
+}
+
+/**
+ * Fractional change against the previous equivalent window.
+ *
+ * No baseline reads as flat rather than as infinite growth: a merchant in their
+ * first week would otherwise see a nonsense percentage on every card.
+ */
+function change(current: number, previous: number): number {
+  return Math.abs(previous) < Number.EPSILON ? 0 : (current - previous) / previous;
+}
+
+export function buildMetrics(allJobs: RecoveryJob[], windowDays: number): DashboardMetrics {
+  const days = Math.max(1, windowDays);
+  const start = windowStart(days);
+  const current = totals(allJobs, start, null);
+  const previous = totals(allJobs, windowStart(days * 2), start);
 
   return {
     windowDays,
     generatedAt: new Date().toISOString(),
-    revenueAtRiskPaise,
-    recoveredPaise,
-    recoveryRate: denominator === 0 ? 0 : recoveredPaise / denominator,
-    activeJobs: jobs.filter((j) => ACTIVE.includes(j.status)).length,
+    revenueAtRiskPaise: current.atRiskPaise,
+    recoveredPaise: current.recoveredPaise,
+    recoveryRate: recoveryRateOf(current),
+    activeJobs: current.activeJobs,
+    // Measured against the previous equivalent window, not invented. These were
+    // four hardcoded constants, so every card claimed the same movement for 7D,
+    // 14D and 30D alike and none of them budged when a recovery was approved —
+    // a number that never moves after you act on it is worse than no number.
     deltas: {
-      revenueAtRisk: { change: -0.081, higherIsBetter: false },
-      recovered: { change: 0.164, higherIsBetter: true },
-      recoveryRate: { change: 0.042, higherIsBetter: true },
-      activeJobs: { change: 0.115, higherIsBetter: false },
+      revenueAtRisk: {
+        change: change(current.atRiskPaise, previous.atRiskPaise),
+        higherIsBetter: false,
+      },
+      recovered: {
+        change: change(current.recoveredPaise, previous.recoveredPaise),
+        higherIsBetter: true,
+      },
+      recoveryRate: {
+        change: change(recoveryRateOf(current), recoveryRateOf(previous)),
+        higherIsBetter: true,
+      },
+      activeJobs: {
+        change: change(current.activeJobs, previous.activeJobs),
+        higherIsBetter: false,
+      },
     },
     funnel: {
-      totalPaise: sum(jobs.map((j) => j.payment.amountPaise)),
-      segments: buildFunnel(jobs),
+      totalPaise: current.failedPaise,
+      segments: buildFunnel(current.jobs),
     },
   };
 }
 
-export function buildTrend(windowDays: number): TrendPoint[] {
-  const trendRng = createRng(SEED + 11);
-  const points: TrendPoint[] = [];
+/**
+ * Daily series over the same window as the KPIs above it, derived from the same
+ * rows. Money is bucketed on the day the payment failed; attempts are bucketed
+ * on the day they ran, because a payday retry belongs to the day it fired.
+ */
+export function buildTrend(allJobs: RecoveryJob[], windowDays: number): TrendPoint[] {
+  const days = new Map<string, { atRiskPaise: number; recoveredPaise: number; attempts: number }>();
 
-  for (let i = windowDays - 1; i >= 0; i -= 1) {
-    const progress = (windowDays - i) / windowDays;
-    const weekday = new Date(isoDaysAgo(i)).getUTCDay();
-    const weekendDip = weekday === 0 || weekday === 6 ? 0.72 : 1;
-
-    const atRiskPaise = Math.round(
-      (9_50_000 + trendRng() * 7_20_000) * weekendDip * (1.18 - progress * 0.22),
-    );
-    // Recovery rate climbs as the engine accumulates playbook history.
-    const recoveryRate = 0.31 + progress * 0.27 + (trendRng() - 0.5) * 0.05;
-
-    points.push({
-      date: isoDaysAgo(i).slice(0, 10),
-      atRiskPaise,
-      recoveredPaise: Math.round(atRiskPaise * recoveryRate),
-      recoveryRate,
-      attempts: Math.round((48 + trendRng() * 42) * weekendDip),
-    });
+  for (let i = Math.max(1, windowDays) - 1; i >= 0; i -= 1) {
+    days.set(isoDaysAgo(i).slice(0, 10), { atRiskPaise: 0, recoveredPaise: 0, attempts: 0 });
   }
 
-  return points;
+  for (const job of allJobs) {
+    const bucket = days.get(job.payment.failedAt.slice(0, 10));
+    if (bucket) {
+      bucket.recoveredPaise += job.recoveredAmountPaise ?? 0;
+      if (isAtRisk(job)) bucket.atRiskPaise += job.payment.amountPaise;
+    }
+
+    for (const attempt of job.attempts) {
+      const ran = days.get(attempt.occurredAt.slice(0, 10));
+      if (ran) ran.attempts += 1;
+    }
+  }
+
+  return [...days.entries()].map(([date, totals]) => {
+    const denominator = totals.recoveredPaise + totals.atRiskPaise;
+    return {
+      date,
+      atRiskPaise: totals.atRiskPaise,
+      recoveredPaise: totals.recoveredPaise,
+      recoveryRate: denominator === 0 ? 0 : totals.recoveredPaise / denominator,
+      attempts: totals.attempts,
+    };
+  });
 }
 
-export function buildFailureBreakdown(windowDays: number): FailureBreakdown[] {
-  const jobs = JOBS.filter((j) => daysSince(j.payment.failedAt) <= windowDays);
+export function buildFailureBreakdown(
+  allJobs: RecoveryJob[],
+  windowDays: number,
+): FailureBreakdown[] {
+  const jobs = allJobs.filter((j) => inWindow(j, windowDays));
   const map = new Map<FailureReason, FailureBreakdown>();
 
   for (const job of jobs) {
@@ -370,7 +486,7 @@ export function buildFailureBreakdown(windowDays: number): FailureBreakdown[] {
       { reason: key, jobCount: 0, atRiskPaise: 0, recoveredPaise: 0, recoveryRate: 0 };
     row.jobCount += 1;
     row.recoveredPaise += job.recoveredAmountPaise ?? 0;
-    if (job.status !== 'recovered') row.atRiskPaise += job.payment.amountPaise;
+    if (isAtRisk(job)) row.atRiskPaise += job.payment.amountPaise;
     map.set(key, row);
   }
 
@@ -385,8 +501,11 @@ export function buildFailureBreakdown(windowDays: number): FailureBreakdown[] {
     .sort((a, b) => b.atRiskPaise - a.atRiskPaise);
 }
 
-export function buildMethodBreakdown(windowDays: number): MethodBreakdown[] {
-  const jobs = JOBS.filter((j) => daysSince(j.payment.failedAt) <= windowDays);
+export function buildMethodBreakdown(
+  allJobs: RecoveryJob[],
+  windowDays: number,
+): MethodBreakdown[] {
+  const jobs = allJobs.filter((j) => inWindow(j, windowDays));
   const map = new Map<PaymentMethod, MethodBreakdown>();
 
   for (const job of jobs) {
@@ -396,7 +515,7 @@ export function buildMethodBreakdown(windowDays: number): MethodBreakdown[] {
       { method: key, jobCount: 0, atRiskPaise: 0, recoveredPaise: 0, recoveryRate: 0 };
     row.jobCount += 1;
     row.recoveredPaise += job.recoveredAmountPaise ?? 0;
-    if (job.status !== 'recovered') row.atRiskPaise += job.payment.amountPaise;
+    if (isAtRisk(job)) row.atRiskPaise += job.payment.amountPaise;
     map.set(key, row);
   }
 
@@ -411,37 +530,56 @@ export function buildMethodBreakdown(windowDays: number): MethodBreakdown[] {
     .sort((a, b) => b.jobCount - a.jobCount);
 }
 
-/** Yield decays with each successive attempt: the basis for a retry budget. */
-export function buildAttemptEffectiveness(): AttemptEffectiveness[] {
-  const buckets = [1, 2, 3, 4];
-  return buckets.map((attempt) => {
-    const attempted = JOBS.filter((j) => j.payment.attemptCount >= attempt).length;
-    const recovered = JOBS.filter(
-      (j) => j.status === 'recovered' && j.payment.attemptCount === attempt,
-    ).length;
-    return {
-      attempt,
-      attempted,
-      recovered,
-      recoveryRate: attempted === 0 ? 0 : recovered / attempted,
-    };
-  });
+/**
+ * Yield decays with each successive attempt: the basis for a retry budget.
+ *
+ * Counted from the attempts themselves, on the day each one ran, so a retry
+ * that fired this week counts this week even if the payment failed last month.
+ * That is the whole point of the panel — the strategies worth measuring
+ * (payday re-presentment, multi-day dunning) are the slowest ones.
+ */
+export function buildAttemptEffectiveness(
+  allJobs: RecoveryJob[],
+  windowDays: number,
+): AttemptEffectiveness[] {
+  const start = windowStart(windowDays);
+  const buckets = [1, 2, 3, 4].map((attempt) => ({
+    attempt,
+    attempted: 0,
+    recovered: 0,
+    recoveryRate: 0,
+  }));
+
+  for (const job of allJobs) {
+    for (const attempt of job.attempts) {
+      if (attempt.occurredAt.slice(0, 10) < start) continue;
+      const bucket = buckets[Math.min(attempt.sequence, buckets.length) - 1];
+      if (!bucket) continue;
+      bucket.attempted += 1;
+      if (attempt.outcome === 'succeeded') bucket.recovered += 1;
+    }
+  }
+
+  return buckets.map((bucket) => ({
+    ...bucket,
+    recoveryRate: bucket.attempted === 0 ? 0 : bucket.recovered / bucket.attempted,
+  }));
 }
 
-export function buildInsights(): Insight[] {
-  const paydayCandidates = JOBS.filter(
+export function buildInsights(allJobs: RecoveryJob[]): Insight[] {
+  const paydayCandidates = allJobs.filter(
     (j) => j.payment.failureReason === 'insufficient_funds' && j.status !== 'recovered',
   );
-  const expiringMandates = JOBS.filter(
+  const expiringMandates = allJobs.filter(
     (j) => j.payment.isSubscription && j.status === 'awaiting_customer',
   );
-  const slaBreached = JOBS.filter(
+  const slaBreached = allJobs.filter(
     (j) =>
       new Date(j.slaExpiresAt).getTime() < Date.now() &&
       ACTIVE.includes(j.status) &&
       j.riskTier !== 'low',
   );
-  const cardDeclines = JOBS.filter(
+  const cardDeclines = allJobs.filter(
     (j) => j.payment.method === 'card' && j.payment.failureReason === 'do_not_honour',
   );
 
@@ -621,11 +759,11 @@ export const PLAYBOOKS: Playbook[] = [
   },
 ];
 
-export function buildAuditEvents(): AuditEvent[] {
+export function buildAuditEvents(allJobs: RecoveryJob[]): AuditEvent[] {
   const events: AuditEvent[] = [];
   const auditRng = createRng(SEED + 31);
 
-  for (const job of JOBS.slice(0, 34)) {
+  for (const job of allJobs.slice(0, 34)) {
     events.push({
       id: `evt_ingest_${job.id}`,
       at: job.payment.failedAt,
@@ -743,11 +881,11 @@ export const MERCHANT: Merchant = {
   mode: 'test',
 };
 
-export function buildEngineStatus(): EngineStatus {
+export function buildEngineStatus(allJobs: RecoveryJob[]): EngineStatus {
   return {
     running: true,
     source: 'dev-seed',
-    queueDepth: JOBS.filter((j) => ACTIVE.includes(j.status)).length,
+    queueDepth: allJobs.filter((j) => ACTIVE.includes(j.status)).length,
     lastSweepAt: isoDaysAgo(0.004),
     razorpayConnected: false,
   };

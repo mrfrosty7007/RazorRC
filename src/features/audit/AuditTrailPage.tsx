@@ -18,6 +18,7 @@ import {
 } from '@/components/ui';
 import { JobDetailDrawer } from '@/features/queue/JobDetailDrawer';
 import { AuditEventList } from './AuditEventList';
+import { toCsv } from '@/lib/csv';
 import { formatCount } from '@/lib/format';
 
 const PAGE_SIZE = 30;
@@ -43,6 +44,7 @@ export function AuditTrailPage() {
   const [offset, setOffset] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [job, setJob] = useState<RecoveryJob | null>(null);
+  const [jobError, setJobError] = useState<string | null>(null);
 
   const search = useDebouncedValue(searchDraft, 250);
 
@@ -63,9 +65,18 @@ export function AuditTrailPage() {
     setOffset(0);
   }, []);
 
+  // Clicking through from an event can miss: the trail keeps records of jobs
+  // that may since have been purged, and a click that does nothing at all reads
+  // as a broken link rather than as a missing job.
   const openJob = useCallback(async (jobId: string) => {
-    const found = await data.recovery.getJob(jobId);
-    setJob(found);
+    setJobError(null);
+    try {
+      const found = await data.recovery.getJob(jobId);
+      if (found) setJob(found);
+      else setJobError(`Job ${jobId} is no longer in the recovery store. The event below is still its record.`);
+    } catch (cause: unknown) {
+      setJobError(cause instanceof Error ? cause.message : String(cause));
+    }
   }, []);
 
   const rows = page.data?.rows ?? [];
@@ -77,29 +88,29 @@ export function AuditTrailPage() {
    */
   const exportCsv = useCallback(() => {
     const header = ['recorded_at', 'severity', 'actor_type', 'actor_name', 'action', 'summary', 'job_id'];
-    const body = rows.map((event) =>
-      [
-        event.at,
-        event.severity,
-        event.actor.type,
-        event.actor.name,
-        event.action,
-        event.summary,
-        event.jobId ?? '',
-      ]
-        .map(csvCell)
-        .join(','),
-    );
+    const body = rows.map((event) => [
+      event.at,
+      event.severity,
+      event.actor.type,
+      event.actor.name,
+      event.action,
+      event.summary,
+      event.jobId ?? '',
+    ]);
 
-    const blob = new Blob([[header.join(','), ...body].join('\n')], {
-      type: 'text/csv;charset=utf-8',
-    });
+    const blob = new Blob([toCsv(header, body)], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
     link.download = `reviveai-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+    // The anchor has to be in the document for the click to count as a user
+    // download, and the URL has to outlive the click — revoking it in the same
+    // tick cancels the write in some WebView builds.
+    link.style.display = 'none';
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }, [rows]);
 
   return (
@@ -143,6 +154,12 @@ export function AuditTrailPage() {
           }
         >
           {page.error}
+        </Callout>
+      ) : null}
+
+      {jobError ? (
+        <Callout tone="amber" title="Could not open that job" className="mb-4">
+          {jobError}
         </Callout>
       ) : null}
 
@@ -191,9 +208,4 @@ export function AuditTrailPage() {
       <JobDetailDrawer job={job} onClose={() => setJob(null)} readOnly />
     </>
   );
-}
-
-/** Minimal RFC 4180 quoting: summaries contain commas and quotation marks. */
-function csvCell(value: string): string {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }

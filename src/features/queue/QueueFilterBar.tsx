@@ -53,12 +53,16 @@ export function QueueFilterBar({
   onReset,
   matchCount,
 }: QueueFilterBarProps) {
+  // The search term counts from `searchDraft`, not from `filters.search`: the
+  // page merges the debounced term in on its way to the query and never writes
+  // it back into `filters`, so reading it here left the count one short and hid
+  // the reset button for anyone whose only filter was a search.
   const activeCount =
     filters.statuses.length +
     filters.reasons.length +
     filters.methods.length +
     filters.riskTiers.length +
-    (filters.search ? 1 : 0);
+    (searchDraft.trim() ? 1 : 0);
 
   return (
     <div className="space-y-2.5 border-b border-hairline p-4">
