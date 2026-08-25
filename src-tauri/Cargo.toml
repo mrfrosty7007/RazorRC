@@ -1,6 +1,6 @@
 [package]
 name = "razorrc"
-version = "1.0.0"
+version = "1.1.0"
 description = "AI Revenue Recovery console for Razorpay merchants"
 authors = ["RazorRC"]
 edition = "2021"
