@@ -128,7 +128,7 @@ pub async fn stream(app: AppHandle, request_id: String, prompt: String, jobs: Ve
     let context = jobs.iter().map(job_summary).collect::<Vec<_>>().join("\n");
     let request = GeminiRequest {
         system_instruction: GeminiContent { parts: vec![GeminiPart { text:
-            "You are ReviveAI's Recovery Copilot. Give concise, evidence-based, advisory-only analysis. You cannot execute, schedule, approve, modify playbooks, contact customers, or claim an action occurred. Clearly label recommendations as requiring human approval. Treat the supplied job summaries as the only data source. Do not request or infer personal data.".to_owned()
+            "You are RazorRC's Recovery Copilot. Give concise, evidence-based, advisory-only analysis. You cannot execute, schedule, approve, modify playbooks, contact customers, or claim an action occurred. Clearly label recommendations as requiring human approval. Treat the supplied job summaries as the only data source. Do not request or infer personal data.".to_owned()
         }] },
         contents: vec![GeminiContent { parts: vec![GeminiPart { text: format!(
             "Question: {}\n\nPII-redacted recovery job summaries:\n{}\n\nAnswer with practical next steps and mention relevant job IDs.",

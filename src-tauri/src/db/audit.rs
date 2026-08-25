@@ -1,6 +1,6 @@
 //! The audit trail.
 //!
-//! Every state change in ReviveAI is written here, in the same transaction as
+//! Every state change in RazorRC is written here, in the same transaction as
 //! the change itself. That coupling is the point: a trail written afterwards, on
 //! a best-effort basis, is a trail that disagrees with the ledger the first time
 //! a write fails halfway.

@@ -40,7 +40,7 @@ pub enum EngineError {
     #[error("{0}")]
     Rejected(String),
 
-    #[error("the recovery store lock was poisoned by an earlier panic; restart ReviveAI")]
+    #[error("the recovery store lock was poisoned by an earlier panic; restart RazorRC")]
     LockPoisoned,
 
     #[error("Razorpay is not configured: set {0} in .env")]
@@ -110,6 +110,6 @@ mod tests {
     fn to_command_flattens_into_a_string() {
         let failed: EngineResult<()> = Err(EngineError::LockPoisoned);
         let message = to_command(failed).unwrap_err();
-        assert!(message.contains("restart ReviveAI"));
+        assert!(message.contains("restart RazorRC"));
     }
 }

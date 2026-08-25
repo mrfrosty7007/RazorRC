@@ -1,4 +1,4 @@
-//! ReviveAI domain model, Rust side.
+//! RazorRC domain model, Rust side.
 //!
 //! Every type here is the serde counterpart of a type in `src/domain/types.ts`.
 //! The wire format is what the React app already expects: `camelCase` fields,

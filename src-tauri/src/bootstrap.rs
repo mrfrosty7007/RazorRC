@@ -27,7 +27,7 @@ use crate::domain::{
 use crate::error::EngineResult;
 
 /// Set to `0` to start against a genuinely empty store.
-pub const DEMO_SEED_ENV: &str = "REVIVEAI_DEMO_SEED";
+pub const DEMO_SEED_ENV: &str = "RAZORRC_DEMO_SEED";
 
 /// Installs defaults and, on a first run, the demo dataset.
 ///
@@ -66,8 +66,8 @@ pub fn merchant() -> Merchant {
     let key_id = env_string("RAZORPAY_KEY_ID").unwrap_or_default();
 
     Merchant {
-        id: env_string("REVIVEAI_MERCHANT_ID").unwrap_or_else(|| "acc_KLm3RtNvQz".to_string()),
-        name: env_string("REVIVEAI_MERCHANT_NAME").unwrap_or_else(|| "Kettle & Co.".to_string()),
+        id: env_string("RAZORRC_MERCHANT_ID").unwrap_or_else(|| "acc_KLm3RtNvQz".to_string()),
+        name: env_string("RAZORRC_MERCHANT_NAME").unwrap_or_else(|| "Kettle & Co.".to_string()),
         mode: if key_id.starts_with("rzp_live_") {
             MerchantMode::Live
         } else {

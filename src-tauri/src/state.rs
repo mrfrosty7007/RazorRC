@@ -16,7 +16,7 @@ use crate::error::EngineResult;
 use crate::recovery::engine::EngineHandle;
 
 /// Who the audit trail names for actions taken in the UI.
-pub const OPERATOR_ENV: &str = "REVIVEAI_OPERATOR";
+pub const OPERATOR_ENV: &str = "RAZORRC_OPERATOR";
 
 const DEFAULT_OPERATOR: &str = "Ops Desk";
 

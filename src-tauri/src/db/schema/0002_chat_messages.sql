@@ -1,4 +1,4 @@
--- ReviveAI recovery store, migration 0002.
+-- RazorRC recovery store, migration 0002.
 --
 -- Persistent conversation history for the AI Copilot.
 

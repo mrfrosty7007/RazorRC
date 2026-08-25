@@ -67,9 +67,9 @@ export async function streamCopilotAnswer(
 // LocalStorage Fallbacks for Browser / Dev Mode
 // ---------------------------------------------------------------------------
 
-const SESSIONS_KEY = 'reviveai_chat_sessions';
-const MESSAGES_KEY = 'reviveai_chat_messages';
-const LEGACY_KEY = 'reviveai_chat_history';
+const SESSIONS_KEY = 'razorrc_chat_sessions';
+const MESSAGES_KEY = 'razorrc_chat_messages';
+const LEGACY_KEY = 'razorrc_chat_history';
 
 function initMockStorage(): { sessions: ChatSession[]; messages: ChatMessage[] } {
   try {

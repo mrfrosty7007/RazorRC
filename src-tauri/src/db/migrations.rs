@@ -72,8 +72,8 @@ pub fn apply(connection: &mut Connection) -> EngineResult<Vec<i64>> {
     let latest = latest_version();
     if found > latest {
         return Err(EngineError::Store(format!(
-            "this file was created by a newer version of ReviveAI (schema v{found}; \
-             this build understands v{latest}). Update ReviveAI, or move the existing \
+            "this file was created by a newer version of RazorRC (schema v{found}; \
+             this build understands v{latest}). Update RazorRC, or move the existing \
              database aside to start with a fresh one."
         )));
     }
@@ -247,7 +247,7 @@ mod tests {
 
         let message = refused.unwrap_err().to_string();
         assert!(
-            message.contains("newer version") && message.contains("Update ReviveAI"),
+            message.contains("newer version") && message.contains("Update RazorRC"),
             "the error does not tell the merchant what to do: {message}"
         );
     }

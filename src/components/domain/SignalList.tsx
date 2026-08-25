@@ -9,7 +9,7 @@ interface SignalListProps {
 /**
  * The engine's evidence, shown as signed contributions.
  *
- * Every recommendation in ReviveAI carries this list. A merchant who cannot see
+ * Every recommendation in RazorRC carries this list. A merchant who cannot see
  * why a retry was scheduled has no way to disagree with it, and an unarguable
  * recommendation is not a recommendation -- it is a black box moving money.
  */

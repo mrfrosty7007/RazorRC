@@ -32,7 +32,7 @@ export class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, info: ErrorInfo): void {
     // Console is the only sink available offline; the audit trail is for
     // merchant actions, not for our own crashes.
-    console.error('[ReviveAI] page crashed', error, info.componentStack);
+    console.error('[RazorRC] page crashed', error, info.componentStack);
   }
 
   private reset = (): void => {

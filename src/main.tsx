@@ -5,7 +5,7 @@ import './styles/globals.css';
 
 const container = document.getElementById('root');
 if (!container) {
-  throw new Error('ReviveAI could not start: #root is missing from index.html');
+  throw new Error('RazorRC could not start: #root is missing from index.html');
 }
 
 createRoot(container).render(

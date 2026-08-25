@@ -42,7 +42,7 @@ interface DisplayMessage {
 }
 
 const INITIAL_STATUS: CopilotStatus = { configured: false, model: 'Gemini 3.6 Flash' };
-const LAST_SESSION_KEY = 'reviveai_active_chat_session_id';
+const LAST_SESSION_KEY = 'razorrc_active_chat_session_id';
 
 const STARTER_PROMPTS = [
   'Which failure reason lost us the most money this week?',
@@ -86,7 +86,7 @@ export function CopilotComposer({ scopedJobIds, className }: CopilotComposerProp
       .catch(() => {
         if (active) {
           setStatus(INITIAL_STATUS);
-          setStatusError('Could not check the Gemini configuration. Restart ReviveAI and try again.');
+          setStatusError('Could not check the Gemini configuration. Restart RazorRC and try again.');
         }
       });
 
@@ -387,7 +387,7 @@ export function CopilotComposer({ scopedJobIds, className }: CopilotComposerProp
           <div className="px-5 pt-4">
             <Callout tone="amber" title="Gemini is not configured">
               Add <code className="font-mono text-micro text-content">COPILOT_API_KEY</code> to the local{' '}
-              <code className="font-mono text-micro text-content">.env</code> file, then restart ReviveAI. The
+              <code className="font-mono text-micro text-content">.env</code> file, then restart RazorRC. The
               rules-based recommendations and playbooks remain available without it.
             </Callout>
           </div>

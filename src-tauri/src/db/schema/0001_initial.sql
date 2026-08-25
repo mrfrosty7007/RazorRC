@@ -1,4 +1,4 @@
--- ReviveAI recovery store, migration 0001.
+-- RazorRC recovery store, migration 0001.
 --
 -- Shape notes that apply to the whole schema:
 --
@@ -23,7 +23,7 @@ CREATE TABLE customers (
   id                    TEXT    PRIMARY KEY,
   name                  TEXT    NOT NULL,
   email                 TEXT    NOT NULL,
-  -- Masked before it reaches this table. ReviveAI has no reason to hold a
+  -- Masked before it reaches this table. RazorRC has no reason to hold a
   -- full contact number, so it does not.
   phone_masked          TEXT    NOT NULL,
   lifetime_value_paise  INTEGER NOT NULL DEFAULT 0 CHECK (lifetime_value_paise >= 0),

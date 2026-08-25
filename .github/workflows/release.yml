@@ -1,6 +1,6 @@
 # Builds the Windows desktop installer and attaches it to a GitHub Release.
 #
-# ReviveAI ships one native artifact: an NSIS installer (.exe) for Windows.
+# RazorRC ships one native artifact: an NSIS installer (.exe) for Windows.
 # Linux and macOS users run the web build, so there is no matrix here on
 # purpose — the single target is declared in `src-tauri/tauri.conf.json`, so
 # this workflow passes no bundle flags.
@@ -60,9 +60,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: ReviveAI ${{ github.ref_name }}
+          releaseName: RazorRC ${{ github.ref_name }}
           releaseBody: |
-            Windows desktop installer for ReviveAI. The installer is unsigned in
+            Windows desktop installer for RazorRC. The installer is unsigned in
             this release, so SmartScreen will ask before the first launch:
             More info -> Run anyway.
 
@@ -74,6 +74,6 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v4
         with:
-          name: reviveai-windows-installer
+          name: razorrc-windows-installer
           path: src-tauri/target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error

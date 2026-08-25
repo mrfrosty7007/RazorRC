@@ -1,4 +1,4 @@
--- ReviveAI recovery store, migration 0003.
+-- RazorRC recovery store, migration 0003.
 --
 -- Support multiple chat sessions for Copilot with automatic migration of existing messages.
 

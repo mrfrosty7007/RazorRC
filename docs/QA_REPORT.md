@@ -1,4 +1,4 @@
-# ReviveAI — end-to-end validation report
+# RazorRC — end-to-end validation report
 
 Date: 24 August 2026 · Scope: the whole product, front to back · Verdict: **ship-ready on the web/seed path; the Windows desktop build still needs one run on Windows**
 
@@ -173,7 +173,7 @@ Synchronization is asserted per window, not eyeballed: the trend has exactly `wi
 
 ### Two things this fix does not do
 
-**An existing database will not pick up the new demo rows.** `seed_demo` runs only when the store has never seen a payment, which is the right rule — it must never overwrite real merchant data. But it means installing this build over an earlier one leaves the old 12-row dataset in place and **the 30D filter will still look broken**. To see the fix, either delete `%APPDATA%\com.reviveai.desktop\recovery.sqlite3` and relaunch, or point the app at a throwaway file with `REVIVEAI_DB_PATH`.
+**An existing database will not pick up the new demo rows.** `seed_demo` runs only when the store has never seen a payment, which is the right rule — it must never overwrite real merchant data. But it means installing this build over an earlier one leaves the old 12-row dataset in place and **the 30D filter will still look broken**. To see the fix, either delete `%APPDATA%\com.razorrc.desktop\recovery.sqlite3` and relaunch, or point the app at a throwaway file with `RAZORRC_DB_PATH`.
 
 **Nothing in the app settles a job.** `jobs.rs` writes `scheduled`, `suppressed` and `in_progress`, and no code path writes `recovered`, `failed` or `written_off` — the demo seeder is their only author. The recovery rate is therefore real for demo data and would sit at 0% forever on a store fed only by live webhooks. That is a missing feature rather than a regression, it is out of scope for this bug, and `closing_event` in `bootstrap.rs` names the three audit actions a future settle path should reuse.
 
@@ -183,7 +183,7 @@ Synchronization is asserted per window, not eyeballed: the trend has exactly `wi
 
 **The Rust side has never been compiled.** This is the largest open risk and it is not reducible from here. The SQL is executed and the tests are written, but a type error, a borrow error or a `clippy` denial would only surface on your machine. Run `cargo test` first, then `cargo clippy --all-targets`, then the build.
 
-**The installer has never been produced.** `pnpm tauri build` needs to run on Windows to confirm `ReviveAI_1.0.0_x64-setup.exe`.
+**The installer has never been produced.** `pnpm tauri build` needs to run on Windows to confirm `RazorRC_1.0.0_x64-setup.exe`.
 
 **The desktop window has never been opened.** Everything asserted about the React surfaces comes from server-rendered markup, which catches crashes, empty states and formatting but says nothing about layout, focus behaviour, scroll containers or how the dark theme actually looks in a WebView2 window. Walk the five pages once by hand.
 

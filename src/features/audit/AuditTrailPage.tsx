@@ -79,7 +79,7 @@ export function AuditTrailPage() {
     }
   }, []);
 
-  const rows = page.data?.rows ?? [];
+  const rows = useMemo(() => page.data?.rows ?? [], [page.data?.rows]);
   const total = page.data?.total ?? 0;
 
   /**
@@ -102,7 +102,7 @@ export function AuditTrailPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `reviveai-audit-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `razorrc-audit-${new Date().toISOString().slice(0, 10)}.csv`;
     // The anchor has to be in the document for the click to count as a user
     // download, and the URL has to outlive the click — revoking it in the same
     // tick cancels the write in some WebView builds.

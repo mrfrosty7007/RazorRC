@@ -1,7 +1,7 @@
 import type { Config } from 'tailwindcss';
 
 /**
- * ReviveAI design tokens.
+ * RazorRC design tokens.
  *
  * The palette is blue-black rather than neutral black: payments tooling sits
  * next to Razorpay's own navy surfaces, and a warm-neutral grey would read as

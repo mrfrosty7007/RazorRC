@@ -56,7 +56,7 @@ export function AnalyticsPage() {
     () => [...(methods.data ?? [])].sort((a, b) => b.atRiskPaise - a.atRiskPaise),
     [methods.data],
   );
-  const attemptRows = attempts.data ?? [];
+  const attemptRows = useMemo(() => attempts.data ?? [], [attempts.data]);
 
   const worstReason = reasonRows[0];
   const bestMethod = useMemo(

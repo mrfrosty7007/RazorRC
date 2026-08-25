@@ -186,7 +186,7 @@ pub fn spawn(store: Arc<Store>, handle: Arc<EngineHandle>) -> JoinHandle<()> {
 
         while !handle.is_stopping() {
             if let Err(error) = sweep(&store, &handle) {
-                eprintln!("[revive-ai] sweep failed: {error}");
+                eprintln!("[razor-rc] sweep failed: {error}");
             }
 
             let mut waited = Duration::ZERO;

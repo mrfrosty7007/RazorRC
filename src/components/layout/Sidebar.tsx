@@ -71,8 +71,8 @@ function Wordmark() {
         <path d="M3.6 4.4v4.9h4.9" stroke="#17C79A" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
       <span className="hidden lg:block">
-        <span className="text-sm font-semibold tracking-tight text-content">Revive</span>
-        <span className="text-sm font-semibold tracking-tight text-azure">AI</span>
+        <span className="text-sm font-semibold tracking-tight text-content">Razor</span>
+        <span className="text-sm font-semibold tracking-tight text-azure">RC</span>
       </span>
     </div>
   );

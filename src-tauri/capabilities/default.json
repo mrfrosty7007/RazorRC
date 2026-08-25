@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "ReviveAI's window needs nothing from the host beyond the IPC bridge to its own commands. There is deliberately no filesystem, shell, HTTP or clipboard permission here: every read and write goes through a typed `#[tauri::command]`, so the audit trail cannot be bypassed by the webview.",
+  "description": "RazorRC's window needs nothing from the host beyond the IPC bridge to its own commands. There is deliberately no filesystem, shell, HTTP or clipboard permission here: every read and write goes through a typed `#[tauri::command]`, so the audit trail cannot be bypassed by the webview.",
   "windows": ["main"],
   "permissions": ["core:default"]
 }

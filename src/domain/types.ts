@@ -1,5 +1,5 @@
 /**
- * ReviveAI domain model.
+ * RazorRC domain model.
  *
  * These types are the contract between the React app and the Rust recovery
  * engine. Every field here has a matching serde field in

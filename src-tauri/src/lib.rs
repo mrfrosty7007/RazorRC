@@ -1,4 +1,4 @@
-//! ReviveAI, Rust side.
+//! RazorRC, Rust side.
 //!
 //! The desktop app is assembled here: open the store, migrate it, install
 //! defaults, start the sweep thread, and expose the sixteen commands the React
@@ -100,7 +100,7 @@ pub fn run() {
             commands::get_merchant,
         ])
         .build(tauri::generate_context!())
-        .expect("ReviveAI could not start");
+        .expect("RazorRC could not start");
 
     app.run(|handle, event| {
         // Ask the sweep to finish its tick before the process goes away, so a
@@ -141,7 +141,7 @@ fn announce_startup(store: &Store, seeded: usize) -> Startup<()> {
         Actor::scheduler(),
         "system.startup",
         format!(
-            "ReviveAI started against {}",
+            "RazorRC started against {}",
             store.path().display()
         ),
         AuditSeverity::Info,

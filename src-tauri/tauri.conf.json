@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ReviveAI",
+  "productName": "RazorRC",
   "version": "1.0.0",
-  "identifier": "com.reviveai.desktop",
+  "identifier": "com.razorrc.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "ReviveAI — Revenue Recovery",
+        "title": "RazorRC — Revenue Recovery",
         "width": 1440,
         "height": 900,
         "minWidth": 1120,
@@ -33,9 +33,9 @@
     "active": true,
     "targets": ["nsis"],
     "category": "Business",
-    "copyright": "© 2026 ReviveAI",
+    "copyright": "© 2026 RazorRC",
     "shortDescription": "AI Revenue Recovery for Razorpay merchants",
-    "longDescription": "ReviveAI turns failed Razorpay payments into a worked queue. A deterministic recovery engine scores each failure, picks a next action, and records every decision in an append-only audit trail.",
+    "longDescription": "RazorRC turns failed Razorpay payments into a worked queue. A deterministic recovery engine scores each failure, picks a next action, and records every decision in an append-only audit trail.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

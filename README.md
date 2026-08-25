@@ -1,4 +1,4 @@
-# ReviveAI
+# RazorRC
 
 An AI revenue-recovery console for Razorpay merchants. Failed payments arrive as a worked queue rather than a CSV: a deterministic engine scores each failure, chooses the next action, schedules it, and records every decision in an append-only audit trail.
 
@@ -8,15 +8,15 @@ Built for the Razorpay AI Buildathon 2026, Track 3 — as an internal merchant t
 
 **Merchant Dashboard** — revenue at risk, amount recovered, recovery rate and active jobs, each against the previous period, with the live recovery queue and the insight panel underneath.
 
-![ReviveAI merchant dashboard](docs/screenshots/dashboard.png)
+![RazorRC merchant dashboard](docs/screenshots/dashboard.png)
 
 **Recovery Queue** — every failed payment as a worked item: score, risk tier, recommended action and SLA, filterable by status, failure reason, method and risk tier.
 
-![ReviveAI recovery queue](docs/screenshots/recovery-queue.png)
+![RazorRC recovery queue](docs/screenshots/recovery-queue.png)
 
 **AI decision** — the job drawer, showing the signals that produced the score, the action the engine recommends, and the attempt history behind it.
 
-![ReviveAI AI recovery decision](docs/screenshots/ai-decision.png)
+![RazorRC AI recovery decision](docs/screenshots/ai-decision.png)
 
 Images live in `docs/screenshots/`. They are captured from the app running against the demo dataset described below, so anything visible in them is reproducible on a fresh install.
 
@@ -26,11 +26,11 @@ Images live in `docs/screenshots/`. They are captured from the app running again
 
 Running order of the recording: a failed payment landing in the queue, the signal breakdown behind its recovery score, an operator approving the recommended action, and that same action appearing in the audit trail seconds later with the operator's name against it.
 
-## Why ReviveAI
+## Why RazorRC
 
 Most failure tooling is a report. It tells a merchant that ₹4.2 lakh failed last week, which codes were involved, and roughly which methods are worst — and then leaves the actual recovery work to whoever opens the export. The failures that were never worth chasing sit next to the ones that would have converted on a single retry, and nothing records what anyone decided.
 
-ReviveAI is built to be the operator rather than the report. It takes a position on every failure: *this one is worth chasing, by this channel, at this hour, because of these seven signals* — and then it either does it or waits for a human to approve it. That difference shows up in four places.
+RazorRC is built to be the operator rather than the report. It takes a position on every failure: *this one is worth chasing, by this channel, at this hour, because of these seven signals* — and then it either does it or waits for a human to approve it. That difference shows up in four places.
 
 It **triages instead of aggregating.** A score and a risk tier per payment, so the queue is ordered by expected recovery rather than by timestamp.
 
@@ -44,7 +44,7 @@ The judgement itself is deliberately deterministic rather than generative. Reven
 
 ## What it does
 
-A payment fails. Razorpay tells you the code and the amount, and that is where most dashboards stop. ReviveAI takes it three steps further: it decides whether this failure is worth chasing, decides *how* to chase it, and remembers who decided what.
+A payment fails. Razorpay tells you the code and the amount, and that is where most dashboards stop. RazorRC takes it three steps further: it decides whether this failure is worth chasing, decides *how* to chase it, and remembers who decided what.
 
 The recovery score is a rules engine, not a model — seven weighted signals over the payment, the customer's history and the failure taxonomy, each contributing a nudge in one direction or the other. Every recommendation carries the signals that produced it, so a merchant can disagree with the reasoning rather than with a number. The same determinism is what makes the engine testable: given a payment, the score and the recommended action are always the same, and the test suite asserts on them directly.
 
@@ -130,11 +130,11 @@ Useful scripts: `npm run typecheck` (`tsc --noEmit`), `npm run lint`, and on the
 
 ### Download a build (GitHub Releases)
 
-_Placeholder — the installer will be attached to the first tagged release:_ `https://github.com/<owner>/ReviveAI/releases`
+_Placeholder — the installer will be attached to the first tagged release:_ `https://github.com/<owner>/RazorRC/releases`
 
 | Platform | Artifact |
 | --- | --- |
-| Windows 10/11 (x64) | `ReviveAI_1.0.0_x64-setup.exe` — NSIS installer |
+| Windows 10/11 (x64) | `RazorRC_1.0.0_x64-setup.exe` — NSIS installer |
 | macOS, Linux | No native build — these platforms use the web version |
 
 The desktop app ships for Windows only, so there is no `.dmg`, AppImage or `.deb` to download. Nothing in the code is Windows-specific — the app still compiles and runs on Linux and macOS, which is where most of the development happens — but those platforms are served by the web build rather than an installer. The filename above is derived from `productName` and `version`, so it tracks those two fields rather than being spelled out anywhere, and the installer lands in `src-tauri\target\release\bundle\nsis\`.
@@ -149,7 +149,7 @@ pnpm install
 pnpm app:build          # -> src-tauri\target\release\bundle\nsis\*-setup.exe
 ```
 
-The build produces an **NSIS installer** (`.exe`) that installs per-user, so no administrator prompt appears, and WebView2 is fetched by the installer if the machine does not already have it. The installer is unsigned, so SmartScreen will warn on first run; "More info → Run anyway" clears it. Code signing is a release-time step, not a build one. The database is created under `%APPDATA%\com.reviveai.desktop\`.
+The build produces an **NSIS installer** (`.exe`) that installs per-user, so no administrator prompt appears, and WebView2 is fetched by the installer if the machine does not already have it. The installer is unsigned, so SmartScreen will warn on first run; "More info → Run anyway" clears it. Code signing is a release-time step, not a build one. The database is created under `%APPDATA%\com.razorrc.desktop\`.
 
 ### Developing on Linux or macOS
 
@@ -162,11 +162,11 @@ pnpm install
 pnpm app:dev
 ```
 
-Fedora uses `webkit2gtk4.1-devel`, `openssl-devel`, `libappindicator-gtk3-devel` and `librsvg2-devel`; Arch uses `webkit2gtk-4.1`, `libappindicator-gtk3` and `librsvg`; macOS needs only the Xcode Command Line Tools (`xcode-select --install`). For a release binary without any bundling, `pnpm tauri build --no-bundle`. The database lives under `~/.local/share/com.reviveai.desktop/` or `~/Library/Application Support/com.reviveai.desktop/`, or wherever `REVIVEAI_DB_PATH` points.
+Fedora uses `webkit2gtk4.1-devel`, `openssl-devel`, `libappindicator-gtk3-devel` and `librsvg2-devel`; Arch uses `webkit2gtk-4.1`, `libappindicator-gtk3` and `librsvg`; macOS needs only the Xcode Command Line Tools (`xcode-select --install`). For a release binary without any bundling, `pnpm tauri build --no-bundle`. The database lives under `~/.local/share/com.razorrc.desktop/` or `~/Library/Application Support/com.razorrc.desktop/`, or wherever `RAZORRC_DB_PATH` points.
 
 ### Bundle configuration
 
-Release settings live in one file. `src-tauri/tauri.conf.json` carries the product metadata — `productName` `ReviveAI`, `identifier` `com.reviveai.desktop`, `version` `1.0.0` — the window, the CSP, the icon set, the single `nsis` bundle target, and the Windows-specific settings under `bundle.windows`: per-user install mode and the WebView2 download bootstrapper. There are deliberately no per-platform config overlays, because an overlay's `targets` array replaces the base one and would quietly reintroduce a bundle for a platform that is no longer shipped.
+Release settings live in one file. `src-tauri/tauri.conf.json` carries the product metadata — `productName` `RazorRC`, `identifier` `com.razorrc.desktop`, `version` `1.0.0` — the window, the CSP, the icon set, the single `nsis` bundle target, and the Windows-specific settings under `bundle.windows`: per-user install mode and the WebView2 download bootstrapper. There are deliberately no per-platform config overlays, because an overlay's `targets` array replaces the base one and would quietly reintroduce a bundle for a platform that is no longer shipped.
 
 The icon set comes from one 1024px master: `32x32.png`, `128x128.png` and `128x128@2x.png` for the window, and `icon.ico` (16 through 256) for Windows and the NSIS installer. `icon.icns` is kept for the macOS window icon during development. All PNGs are 32-bit RGBA, which Tauri requires and rejects builds without.
 
@@ -174,7 +174,7 @@ Every bundle key is validated against the config schema that ships with the pinn
 
 `.github/workflows/release.yml` builds the installer on `windows-latest` and attaches it to a draft GitHub Release when a `v*` tag is pushed. It never creates a tag: `tagName` is passed only when the ref already is one, and a manual `workflow_dispatch` run uploads the installer as a workflow artifact instead of touching releases at all.
 
-Note for anyone upgrading a local install: the `identifier` determines the application-data directory, so changing it moves the database. A database written under an earlier identifier is not migrated; point `REVIVEAI_DB_PATH` at the old file if you want to keep it.
+Note for anyone upgrading a local install: the `identifier` determines the application-data directory, so changing it moves the database. A database written under an earlier identifier is not migrated; point `RAZORRC_DB_PATH` at the old file if you want to keep it.
 
 ## Built With
 
@@ -219,7 +219,7 @@ Money is stored and moved as integer paise; there is no float anywhere in the mo
 
 ## The demo dataset
 
-On first run against an empty store the engine ingests twelve failed payments and closes four of them as recovered. Every row goes through the real `jobs::ingest` path, so the scores, risk tiers, recommended actions and signals on screen are the engine's own output rather than fixtures — and the seeding announces itself in the audit trail as `system.demo_seed`. Set `REVIVEAI_DEMO_SEED=0` to start empty.
+On first run against an empty store the engine ingests twelve failed payments and closes four of them as recovered. Every row goes through the real `jobs::ingest` path, so the scores, risk tiers, recommended actions and signals on screen are the engine's own output rather than fixtures — and the seeding announces itself in the audit trail as `system.demo_seed`. Set `RAZORRC_DEMO_SEED=0` to start empty.
 
 ## Verification status
 

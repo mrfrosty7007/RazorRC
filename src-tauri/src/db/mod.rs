@@ -22,9 +22,9 @@ use rusqlite::Connection;
 use crate::clock;
 use crate::error::{EngineError, EngineResult};
 
-/// Set `REVIVEAI_DB_PATH` to point the store somewhere other than the app data
+/// Set `RAZORRC_DB_PATH` to point the store somewhere other than the app data
 /// directory. Used by tests and by anyone who wants a throwaway database.
-pub const DB_PATH_ENV: &str = "REVIVEAI_DB_PATH";
+pub const DB_PATH_ENV: &str = "RAZORRC_DB_PATH";
 
 const DB_FILE_NAME: &str = "recovery.sqlite3";
 

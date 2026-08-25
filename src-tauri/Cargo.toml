@@ -1,17 +1,17 @@
 [package]
-name = "reviveai"
+name = "razorrc"
 version = "1.0.0"
 description = "AI Revenue Recovery console for Razorpay merchants"
-authors = ["ReviveAI"]
+authors = ["RazorRC"]
 edition = "2021"
 rust-version = "1.77"
-default-run = "reviveai"
+default-run = "razorrc"
 
-# The binary is a three-line shim around `reviveai_lib::run()`. Keeping the app
+# The binary is a three-line shim around `razorrc_lib::run()`. Keeping the app
 # in a library means the recovery engine and its tests can be exercised with
 # plain `cargo test`, without standing up a webview.
 [lib]
-name = "reviveai_lib"
+name = "razorrc_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

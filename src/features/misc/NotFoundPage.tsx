@@ -11,7 +11,7 @@ export function NotFoundPage() {
       <EmptyState
         icon={Compass}
         title="That screen does not exist"
-        description="The link may be from an older build of ReviveAI. Everything still works from the dashboard."
+        description="The link may be from an older build of RazorRC. Everything still works from the dashboard."
         action={
           <Button variant="primary" onClick={() => navigate('/')}>
             Back to dashboard
