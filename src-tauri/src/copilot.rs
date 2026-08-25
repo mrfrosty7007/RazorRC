@@ -5,13 +5,13 @@
 
 use std::time::Duration;
 
-use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 use crate::domain::RecoveryJob;
 
-const MODEL: &str = "gemini-2.5-flash";
+const MODEL: &str = "gemini-3.6-flash";
+const PROVIDER: &str = "gemini";
 const EVENT: &str = "copilot:stream";
 const MAX_PROMPT_CHARS: usize = 4_000;
 
@@ -100,18 +100,30 @@ fn job_summary(job: &RecoveryJob) -> String {
 }
 
 fn emit(app: &AppHandle, request_id: &str, kind: &str, text: Option<String>, message: Option<String>) {
-    let _ = app.emit(EVENT, StreamEvent {
+    if let Err(error) = app.emit(EVENT, StreamEvent {
         request_id: request_id.to_owned(), kind: kind.to_owned(), text, message,
-    });
+    }) {
+        tracing::error!(request_id, kind, %error, "could not emit copilot stream event");
+    }
 }
 
 pub async fn stream(app: AppHandle, request_id: String, prompt: String, jobs: Vec<RecoveryJob>) -> Result<(), String> {
-    let key = std::env::var("COPILOT_API_KEY")
-        .map_err(|_| "Gemini is not configured. Add COPILOT_API_KEY to the local .env file.".to_owned())?;
+    let provider = std::env::var("COPILOT_PROVIDER").unwrap_or_else(|_| PROVIDER.to_owned());
+    let key = std::env::var("COPILOT_API_KEY").map_err(|error| {
+        tracing::error!(request_id = %request_id, provider = %provider, model = MODEL, key_exists = false, %error, "Gemini API key is unavailable");
+        error.to_string()
+    })?;
+    tracing::debug!(request_id = %request_id, provider = %provider, model = MODEL, key_exists = !key.trim().is_empty(), "starting Gemini copilot request");
     if key.trim().is_empty() {
-        return Err("Gemini is not configured. Add COPILOT_API_KEY to the local .env file.".to_owned());
+        let error = "Gemini is not configured. Add COPILOT_API_KEY to the local .env file.".to_owned();
+        tracing::error!(request_id = %request_id, provider = %provider, model = MODEL, key_exists = false, error = %error, "Gemini request rejected before transport");
+        return Err(error);
     }
-    if prompt.trim().is_empty() { return Err("Ask the copilot a question before sending.".to_owned()); }
+    if prompt.trim().is_empty() {
+        let error = "Ask the copilot a question before sending.".to_owned();
+        tracing::error!(request_id = %request_id, error = %error, "Gemini request rejected for an empty prompt");
+        return Err(error);
+    }
 
     let context = jobs.iter().map(job_summary).collect::<Vec<_>>().join("\n");
     let request = GeminiRequest {
@@ -123,40 +135,79 @@ pub async fn stream(app: AppHandle, request_id: String, prompt: String, jobs: Ve
             redact_prompt(&prompt), context
         ) }] }],
     };
-    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:streamGenerateContent?alt=sse&key={key}");
-    let response = reqwest::Client::builder().timeout(Duration::from_secs(60)).build()
-        .map_err(|_| "Could not initialise the Gemini connection.".to_owned())?
-        .post(url).json(&request).send().await
-        .map_err(|error| if error.is_timeout() { "Gemini timed out. Check your connection and try again.".to_owned() } else if error.is_connect() { "Gemini is unreachable. Check your internet connection and try again.".to_owned() } else { "Could not reach Gemini. Try again shortly.".to_owned() })?;
+    let endpoint = format!("https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent");
+    // Keep the secret out of logs, including debug output from this module.
+    tracing::debug!(request_id = %request_id, provider = %provider, model = MODEL, request_url = %endpoint, "sending Gemini request");
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(60)).build().map_err(|error| {
+        tracing::error!(request_id = %request_id, %error, "could not initialise Gemini HTTP client");
+        error.to_string()
+    })?;
+    let response = client
+        .post(&endpoint)
+        .header("x-goog-api-key", &key)
+        .json(&request)
+        .send()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                request_id = %request_id,
+                model = MODEL,
+                is_timeout = error.is_timeout(),
+                is_connect = error.is_connect(),
+                %error,
+                "Gemini HTTP request failed"
+            );
+            error.to_string()
+        })?;
+
+    tracing::debug!(
+        request_id = %request_id,
+        model = MODEL,
+        http_status = %response.status(),
+        "Gemini HTTP response received"
+    );
+
     if !response.status().is_success() {
         let status = response.status();
-        // Never expose a provider response: it can contain configuration detail.
-        return Err(if status.as_u16() == 401 || status.as_u16() == 403 { "Gemini rejected the configured API key. Check the local .env file.".to_owned() } else if status.as_u16() == 429 { "Gemini is busy. Wait a moment and try again.".to_owned() } else { format!("Gemini could not answer right now (HTTP {}).", status.as_u16()) });
+        let body = response.text().await.map_err(|error| {
+            tracing::error!(request_id = %request_id, model = MODEL, %error, "could not read Gemini error body");
+            error.to_string()
+        })?;
+        tracing::error!(
+            request_id = %request_id,
+            model = MODEL,
+            http_status = %status,
+            gemini_error_body = %body,
+            "Gemini returned a non-success response"
+        );
+        return Err(format!("Gemini returned HTTP {status}: {body}"));
     }
-    let mut buffer = String::new();
-    let mut bytes = response.bytes_stream();
-    while let Some(chunk) = bytes.next().await {
-        let chunk = chunk.map_err(|_| "Gemini disconnected before finishing. Try again.".to_owned())?;
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
-        while let Some(index) = buffer.find('\n') {
-            let line = buffer[..index].trim_end_matches('\r').to_owned();
-            buffer.drain(..=index);
-            if let Some(data) = line.strip_prefix("data: ") {
-                if let Ok(parsed) = serde_json::from_str::<GeminiChunk>(data) {
-                    if let Some(text) = parsed.candidates.and_then(|c| c.into_iter().next()).and_then(|c| c.content).and_then(|c| c.parts).and_then(|p| p.into_iter().filter_map(|part| part.text).next()) {
-                        if !text.is_empty() { emit(&app, &request_id, "delta", Some(text), None); }
-                    }
-                }
-            }
+
+    let parsed: GeminiChunk = response.json().await.map_err(|error| {
+        tracing::error!(request_id = %request_id, model = MODEL, %error, "could not parse Gemini JSON response");
+        error.to_string()
+    })?;
+
+    if let Some(text) = parsed
+        .candidates
+        .and_then(|c| c.into_iter().next())
+        .and_then(|c| c.content)
+        .and_then(|c| c.parts)
+        .and_then(|p| p.into_iter().filter_map(|part| part.text).next())
+    {
+        if !text.is_empty() {
+            emit(&app, &request_id, "delta", Some(text), None);
         }
     }
     emit(&app, &request_id, "complete", None, None);
+    tracing::debug!(request_id = %request_id, model = MODEL, "Gemini copilot stream completed");
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::redact_prompt;
+
     #[test]
     fn redacts_common_contact_tokens() {
         let output = redact_prompt("Email jane@example.com or call +91-9876543210");

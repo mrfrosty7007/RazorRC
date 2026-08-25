@@ -24,11 +24,23 @@ pub struct Migration {
 
 /// Every migration, ascending. Append only — editing a shipped migration means
 /// two installs disagree about what version 1 was.
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "initial",
-    sql: include_str!("schema/0001_initial.sql"),
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "initial",
+        sql: include_str!("schema/0001_initial.sql"),
+    },
+    Migration {
+        version: 2,
+        name: "chat_messages",
+        sql: include_str!("schema/0002_chat_messages.sql"),
+    },
+    Migration {
+        version: 3,
+        name: "chat_sessions",
+        sql: include_str!("schema/0003_chat_sessions.sql"),
+    },
+];
 
 const BOOKKEEPING: &str = "CREATE TABLE IF NOT EXISTS schema_migrations (
   version    INTEGER PRIMARY KEY,
@@ -370,5 +382,64 @@ mod tests {
                 [],
             )
             .unwrap();
+    }
+
+    #[test]
+    fn migration_0003_migrates_existing_chat_messages_into_imported_session() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch("PRAGMA foreign_keys = ON;")
+            .unwrap();
+        connection.execute_batch(BOOKKEEPING).unwrap();
+
+        // Apply migration 1 and 2
+        for migration in &MIGRATIONS[0..2] {
+            let tx = connection.transaction().unwrap();
+            tx.execute_batch(migration.sql).unwrap();
+            tx.execute(
+                "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?1, ?2, ?3)",
+                params![migration.version, migration.name, clock::now_iso()],
+            )
+            .unwrap();
+            tx.commit().unwrap();
+        }
+
+        // Insert legacy messages
+        connection
+            .execute(
+                "INSERT INTO chat_messages (id, role, content, created_at)
+                 VALUES (1, 'user', 'What is our recovered revenue?', 1000),
+                        (2, 'assistant', 'Your recovered revenue is 50,000.', 2000)",
+                [],
+            )
+            .unwrap();
+
+        // Apply remaining migrations (migration 3)
+        let applied = apply(&mut connection).unwrap();
+        assert_eq!(applied, vec![3]);
+
+        // Check session created
+        let (session_id, title, created_at, updated_at): (i64, String, i64, i64) = connection
+            .query_row(
+                "SELECT id, title, created_at, updated_at FROM chat_sessions WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+
+        assert_eq!(session_id, 1);
+        assert_eq!(title, "Imported Conversation");
+        assert_eq!(created_at, 1000);
+        assert_eq!(updated_at, 2000);
+
+        // Check migrated messages
+        let count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM chat_messages WHERE session_id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2);
     }
 }

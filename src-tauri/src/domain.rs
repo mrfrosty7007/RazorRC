@@ -602,6 +602,31 @@ pub struct EngineStatus {
     pub razorpay_connected: bool,
 }
 
+/// A persisted chat session in the AI Copilot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatSession {
+    pub id: i64,
+    pub title: String,
+    #[serde(alias = "createdAt")]
+    pub created_at: i64,
+    #[serde(alias = "updatedAt")]
+    pub updated_at: i64,
+}
+
+/// A persisted message in the AI Copilot conversation history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMessage {
+    pub id: i64,
+    #[serde(alias = "sessionId")]
+    pub session_id: i64,
+    pub role: String,
+    pub content: String,
+    #[serde(alias = "createdAt")]
+    pub created_at: i64,
+}
+
 // ---------------------------------------------------------------------------
 // Requests from the UI
 // ---------------------------------------------------------------------------
@@ -783,5 +808,30 @@ mod tests {
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("\"jobId\":null"), "{json}");
         assert!(json.contains("\"type\":\"engine\""), "{json}");
+    }
+
+    #[test]
+    fn chat_session_and_message_serialization() {
+        let session = ChatSession {
+            id: 1,
+            title: "Recovery Discussion".into(),
+            created_at: 1700000000,
+            updated_at: 1700001000,
+        };
+        let session_json = serde_json::to_string(&session).unwrap();
+        assert!(session_json.contains("\"createdAt\":1700000000"));
+        assert!(session_json.contains("\"updatedAt\":1700001000"));
+        assert!(session_json.contains("\"title\":\"Recovery Discussion\""));
+
+        let msg = ChatMessage {
+            id: 10,
+            session_id: 1,
+            role: "user".into(),
+            content: "Hello".into(),
+            created_at: 1700000050,
+        };
+        let msg_json = serde_json::to_string(&msg).unwrap();
+        assert!(msg_json.contains("\"sessionId\":1"));
+        assert!(msg_json.contains("\"createdAt\":1700000050"));
     }
 }

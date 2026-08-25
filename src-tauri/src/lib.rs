@@ -38,9 +38,17 @@ fn to_startup_message<E: std::fmt::Display>(error: E) -> String {
 
 /// Entry point, called by `main`.
 pub fn run() {
-    // A missing `.env` is normal: the app runs without Razorpay credentials and
-    // says so in the sidebar rather than refusing to start.
-    let _ = dotenvy::dotenv();
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_target(false)
+        .init();
+
+    // A missing `.env` is normal: the app runs without credentials. Log only
+    // the outcome, never any environment values.
+    match dotenvy::dotenv() {
+        Ok(path) => tracing::info!(path = %path.display(), ".env loaded"),
+        Err(error) => tracing::warn!(%error, ".env was not loaded"),
+    }
 
     let app = tauri::Builder::default()
         .setup(|app| {
@@ -80,6 +88,13 @@ pub fn run() {
             commands::set_playbook_enabled,
             commands::get_copilot_status,
             commands::stream_copilot_answer,
+            commands::list_chat_sessions,
+            commands::create_chat_session,
+            commands::rename_chat_session,
+            commands::delete_chat_session,
+            commands::load_chat_messages,
+            commands::save_chat_message,
+            commands::clear_chat_session,
             commands::list_audit_events,
             commands::get_engine_status,
             commands::get_merchant,

@@ -7,6 +7,7 @@
 //! complete rather than best-effort.
 
 pub mod audit;
+pub mod chat;
 pub mod jobs;
 pub mod metrics;
 pub mod migrations;

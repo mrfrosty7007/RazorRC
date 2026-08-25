@@ -18,11 +18,11 @@
 
 use tauri::{AppHandle, State};
 
-use crate::db::{audit, jobs, metrics, playbooks};
+use crate::db::{audit, chat, jobs, metrics, playbooks};
 use crate::domain::{
-    AttemptEffectiveness, AuditEvent, AuditQuery, DashboardMetrics, EngineStatus, FailureBreakdown,
-    Insight, Merchant, MethodBreakdown, Paged, PageRequest, Playbook, QueueFilters, RecoveryJob,
-    TrendPoint,
+    AttemptEffectiveness, AuditEvent, AuditQuery, ChatMessage, ChatSession, DashboardMetrics,
+    EngineStatus, FailureBreakdown, Insight, Merchant, MethodBreakdown, Paged, PageRequest,
+    Playbook, QueueFilters, RecoveryJob, TrendPoint,
 };
 use crate::error::{to_command, CommandResult};
 use crate::recovery::{engine, insights};
@@ -154,7 +154,7 @@ pub struct CopilotStatus { configured: bool, model: &'static str }
 
 #[tauri::command]
 pub fn get_copilot_status() -> CopilotStatus {
-    CopilotStatus { configured: crate::copilot::configured(), model: "Gemini 2.5 Flash" }
+    CopilotStatus { configured: crate::copilot::configured(), model: "Gemini 3.6 Flash" }
 }
 
 /// Streams text as `copilot:stream` events. This command only reads recovery
@@ -167,10 +167,68 @@ pub async fn stream_copilot_answer(
     prompt: String,
     job_ids: Vec<String>,
 ) -> CommandResult<()> {
+    tracing::debug!(request_id = %request_id, job_count = job_ids.len(), "copilot request received");
     let jobs = state.read(|connection| {
         job_ids.iter().filter_map(|id| jobs::get(connection, id).transpose()).collect()
-    }).map_err(|error| error.to_string())?;
-    crate::copilot::stream(app, request_id, prompt, jobs).await
+    }).map_err(|error| {
+        tracing::error!(request_id = %request_id, %error, "copilot job context lookup failed");
+        error.to_string()
+    })?;
+    crate::copilot::stream(app, request_id.clone(), prompt, jobs).await.map_err(|error| {
+        tracing::error!(request_id = %request_id, error = %error, "copilot request failed");
+        error
+    })
+}
+
+#[tauri::command]
+pub fn list_chat_sessions(state: State<'_, AppState>) -> CommandResult<Vec<ChatSession>> {
+    to_command(state.read(chat::list_sessions))
+}
+
+#[tauri::command]
+pub fn create_chat_session(
+    state: State<'_, AppState>,
+    title: Option<String>,
+) -> CommandResult<ChatSession> {
+    let title_str = title.as_deref().unwrap_or("New Chat");
+    to_command(state.write(|transaction| chat::create_session(transaction, title_str)))
+}
+
+#[tauri::command]
+pub fn rename_chat_session(
+    state: State<'_, AppState>,
+    session_id: i64,
+    title: String,
+) -> CommandResult<ChatSession> {
+    to_command(state.write(|transaction| chat::rename_session(transaction, session_id, &title)))
+}
+
+#[tauri::command]
+pub fn delete_chat_session(state: State<'_, AppState>, session_id: i64) -> CommandResult<()> {
+    to_command(state.write(|transaction| chat::delete_session(transaction, session_id)))
+}
+
+#[tauri::command]
+pub fn load_chat_messages(
+    state: State<'_, AppState>,
+    session_id: i64,
+) -> CommandResult<Vec<ChatMessage>> {
+    to_command(state.read(|connection| chat::load_messages(connection, session_id)))
+}
+
+#[tauri::command]
+pub fn save_chat_message(
+    state: State<'_, AppState>,
+    session_id: i64,
+    role: String,
+    content: String,
+) -> CommandResult<ChatMessage> {
+    to_command(state.write(|transaction| chat::save_message(transaction, session_id, &role, &content)))
+}
+
+#[tauri::command]
+pub fn clear_chat_session(state: State<'_, AppState>, session_id: i64) -> CommandResult<()> {
+    to_command(state.write(|transaction| chat::clear_session_messages(transaction, session_id)))
 }
 
 // ---------------------------------------------------------------------------
