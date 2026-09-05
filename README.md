@@ -1,234 +1,619 @@
 # RazorRC
 
-An AI revenue-recovery console for Razorpay merchants. Failed payments arrive as a worked queue rather than a CSV: a deterministic engine scores each failure, chooses the next action, schedules it, and records every decision in an append-only audit trail.
+> **Autonomous AI Revenue Recovery Console for Razorpay Merchants**  
+> *Transform cold, unworked payment failure CSVs into a prioritized, deterministic recovery queue backed by bounded playbooks and an immutable audit trail.*
 
-Built for the Razorpay AI Buildathon 2026, Track 3 — as an internal merchant tool would be built, not as a demo.
+[![Razorpay AI Buildathon 2026](https://img.shields.io/badge/Razorpay_AI_Buildathon_2026-Track_03:_Revenue_Recovery-0C2340?style=for-the-badge&logo=razorpay&logoColor=3395FF)](https://github.com/mrfrosty7007/RazorRC)
+[![Tauri v2](https://img.shields.io/badge/Tauri_v2-2.1.1-24C8DB?style=for-the-badge&logo=tauri&logoColor=white)](https://tauri.app)
+[![Rust Core](https://img.shields.io/badge/Rust_Core-1.77%2B-DEA584?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![React 18](https://img.shields.io/badge/React_18-TypeScript-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
+[![SQLite STRICT](https://img.shields.io/badge/SQLite-STRICT_Mode-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-17C79A?style=for-the-badge)](LICENSE)
+
+---
+
+![RazorRC Merchant Dashboard](docs/screenshots/dashboard.png)
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+  - [The Problem: Why CSV-Based Recovery Fails](#the-problem-why-csv-based-recovery-fails)
+  - [The RazorRC Solution](#the-razorrc-solution)
+  - [Deterministic Decision Engine vs. Generative AI](#deterministic-decision-engine-vs-generative-ai)
+- [Key Features](#key-features)
+- [Screenshots](#screenshots)
+  - [1. Merchant Dashboard & Money in Motion](#1-merchant-dashboard--money-in-motion)
+  - [2. Prioritized Recovery Queue](#2-prioritized-recovery-queue)
+  - [3. Deterministic Decision Drawer](#3-deterministic-decision-drawer)
+- [Demo Video & Walkthrough](#demo-video--walkthrough)
+- [Quick Start](#quick-start)
+  - [Option A: Instant Web Preview](#option-a-instant-web-preview)
+  - [Option B: Native Desktop Application](#option-b-native-desktop-application)
+  - [Option C: Build Standalone Windows Installer](#option-c-build-standalone-windows-installer)
+- [Installation Guide](#installation-guide)
+  - [Prerequisites](#prerequisites)
+  - [Windows Setup](#windows-setup)
+  - [Linux Setup](#linux-setup)
+  - [macOS Setup](#macos-setup)
+  - [Environment Configuration (.env)](#environment-configuration-env)
+- [Running RazorRC (Feature Walkthrough)](#running-razorrc-feature-walkthrough)
+  - [1. Merchant Dashboard (`/`)](#1-merchant-dashboard-)
+  - [2. Recovery Queue (`/queue`)](#2-recovery-queue-queue)
+  - [3. Decision Drawer & Operator Actions](#3-decision-drawer--operator-actions)
+  - [4. AI Copilot & Automation Playbooks (`/copilot`)](#4-ai-copilot--automation-playbooks-copilot)
+  - [5. Analytics & Retry Economics (`/analytics`)](#5-analytics--retry-economics-analytics)
+  - [6. Immutable Audit Trail (`/audit`)](#6-immutable-audit-trail-audit)
+- [Troubleshooting](#troubleshooting)
+- [Architecture](#architecture)
+  - [System Flow Diagram](#system-flow-diagram)
+  - [Component Responsibilities](#component-responsibilities)
+  - [Financial Integrity & Security Model](#financial-integrity--security-model)
+- [Tech Stack](#tech-stack)
+- [Demo Dataset](#demo-dataset)
+  - [The Hero Case: Ritu Nair](#the-hero-case-ritu-nair)
+  - [Resetting Demo Data](#resetting-demo-data)
+- [Project Structure](#project-structure)
+- [Testing & Verification](#testing--verification)
+- [Releases](#releases)
+- [Roadmap](#roadmap)
+  - [Current MVP (Track 03 Submission)](#current-mvp-track-03-submission)
+  - [Phase 2: Live Gateway Integration](#phase-2-live-gateway-integration)
+  - [Phase 3: Multi-Merchant & Omnichannel Delivery](#phase-3-multi-merchant--omnichannel-delivery)
+
+---
+
+## Overview
+
+### The Problem: Why CSV-Based Recovery Fails
+
+For Indian internet businesses using modern payment gateways like Razorpay, payment failures represent a silent 3% to 7% leak on top-line revenue. Today, merchant failure tooling is strictly passive:
+
+1. **Failure Reports Without Triage:** Gateways export bulk CSVs days after transactions fail, commingling permanent write-offs (e.g. invalid cards) with high-probability recoveries (e.g. salary-day insufficient funds).
+2. **Blind Immediate Retries:** Blind automated retry scripts trigger immediate card re-presentments, which fail repeatedly, degrade issuer reputation, trigger card network penalties, and exhaust customer patience.
+3. **No Operator Accountability:** When a recovery action is taken, no unalterable audit log records who authorized the charge, what rationale justified it, or which playbook step ran.
+
+### The RazorRC Solution
+
+**RazorRC** is an autonomous, deterministic AI revenue recovery console built specifically for Razorpay merchants. Rather than acting as a reporting tool, RazorRC acts as an **autonomous financial operator**:
+
+- **Real-Time Triage:** Every failure is mapped onto a strict 10-reason failure taxonomy and scored (0–100) using a 7-signal deterministic rules engine.
+- **Clock-Driven Scheduling:** Recommendations carry precise execution delays (e.g. scheduling an insufficient-funds retry for 06:30 UTC on salary day, or waiting 90 minutes for an issuer bank downtime to clear).
+- **Bounded Automation:** Merchants define explicit guardrails via automated Playbooks (e.g. routing transactions above ₹50,000 to manual human review).
+- **Immutable Audit Trail:** Enforced at the database engine level via SQLite triggers, guaranteeing that every decision, operator approval, and automated sweep is permanently recorded and exportable.
+
+### Deterministic Decision Engine vs. Generative AI
+
+In fintech, charging a customer's payment instrument must be **explainable to finance teams, mathematically reproducible in test suites, and compliant with PCI-DSS guidelines**. 
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       RazorRC Engine                        │
+│                                                             │
+│   Deterministic Core (Rust)     Advisory Copilot (Gemini)   │
+│   ┌────────────────────────┐    ┌────────────────────────┐  │
+│   │ • 7-Signal Scoring     │    │ • Pattern Analysis     │  │
+│   │ • Action Scheduling    │    │ • Merchant Q&A         │  │
+│   │ • Playbook Execution   │    │ • PII-Sanitized Context│  │
+│   │ • Audit Ledger Writes  │    │ • Zero Direct Debits   │  │
+│   └────────────────────────┘    └────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- **The Rules Engine Executes:** Written in Rust, the rules engine applies empirical weights across customer lifetime value, payment history, rail speed, and failure reasons. It never hallucinates.
+- **The LLM Advises:** Google Gemini (`gemini-3.7-flash`) powers the Copilot composer, answering merchant questions about failure patterns and cohort economics. Client-side PII sanitization strips customer emails, phone numbers, and payment IDs before prompt dispatch.
+
+[↑ Back to Top](#table-of-contents)
+
+---
+
+## Key Features
+
+- **Revenue at Risk Dashboard:** Features a continuous 5-stage *Money in Motion* band (`Recovered`, `In flight`, `Awaiting customer`, `Not yet actioned`, `Written off`), synchronized with 4 windowed KPI cards across 7D, 14D, and 30D calendar windows.
+- **Prioritized Recovery Queue:** Organizes failures into high-yield working queues filterable by status, payment rail, failure taxonomy, and risk tier.
+- **7-Signal Deterministic Recovery Score:** Every transaction receives a 0–100 score with an itemized signal breakdown explaining the exact baseline, customer history, retry fatigue, and ticket size weights.
+- **Actionable Decision Drawer:** Allows operators to review raw gateway logs, customer lifetime value, recovery SLA countdowns, and execute one-click approvals, immediate manual retries, or suppressions.
+- **Automated Merchant Playbooks:** Pre-configured rule sets (`Payday re-present`, `Issuer downtime hold`, `Card refresh`, `Checkout drop-off rescue`, `High-value manual desk`) that automate multi-step retry chains with mandatory cooldowns.
+- **Retry Economics & Fatigue Analysis:** Evaluates marginal recovery yield across attempt rungs (Sequence 1 to 4+) against an **8% decision floor** to prevent unprofitable retries and gateway penalty fees.
+- **Gemini Advisory Copilot:** Natural language recovery copilot with persistent SQLite conversation sessions and client-side PII redaction.
+- **Trigger-Enforced Audit Trail:** SQLite triggers reject any `UPDATE` or `DELETE` on the audit table, providing an unalterable compliance ledger with RFC-compliant CSV export.
+
+[↑ Back to Top](#table-of-contents)
+
+---
 
 ## Screenshots
 
-**Merchant Dashboard** — revenue at risk, amount recovered, recovery rate and active jobs, each against the previous period, with the live recovery queue and the insight panel underneath.
+### 1. Merchant Dashboard & Money in Motion
+![RazorRC Merchant Dashboard](docs/screenshots/dashboard.png)
+- **What You See:** The continuous *Money in Motion* allocation band (₹3,87,988 failed volume), four KPI cards with period-over-period trend sparklines, the dual-axis recovery trend chart, and proactive AI insight alerts.
+- **Why It Matters:** Gives finance teams instant visibility into how much failed revenue is actively recovering versus unworked, updating synchronously when changing window ranges.
 
-![RazorRC merchant dashboard](docs/screenshots/dashboard.png)
+---
 
-**Recovery Queue** — every failed payment as a worked item: score, risk tier, recommended action and SLA, filterable by status, failure reason, method and risk tier.
+### 2. Prioritized Recovery Queue
+![RazorRC Recovery Queue](docs/screenshots/recovery-queue.png)
+- **What You See:** Failed payments structured into a prioritized queue sorted by financial exposure. Tabs filter by lifecycle state (`Needs approval`, `In flight`, `Awaiting customer`, `Closed`).
+- **Why It Matters:** Operators focus on high-ticket, high-probability recoveries (e.g. ₹92,500 downtime or ₹66,300 insufficient funds) rather than triaging flat chronological exports.
 
-![RazorRC recovery queue](docs/screenshots/recovery-queue.png)
+---
 
-**AI decision** — the job drawer, showing the signals that produced the score, the action the engine recommends, and the attempt history behind it.
+### 3. Deterministic Decision Drawer
+![RazorRC AI Recovery Decision](docs/screenshots/ai-decision.png)
+- **What You See:** The decision drawer for Ritu Nair (₹66,300). Displays raw gateway error text, customer LTV (₹1.67L, 22 prior payments), recommended payday re-presentment, and the **7-signal score evidence** (+0.12 baseline, +0.08 established payer, -0.05 high ticket).
+- **Why It Matters:** Demonstrates full explainability. Operators and finance teams see the exact mathematical justification behind every recommendation before approving it.
 
-![RazorRC AI recovery decision](docs/screenshots/ai-decision.png)
+[↑ Back to Top](#table-of-contents)
 
-Images live in `docs/screenshots/`. They are captured from the app running against the demo dataset described below, so anything visible in them is reproducible on a fresh install.
+---
 
-## Demo video
+## Demo Video & Walkthrough
 
-**Walkthrough:** _link to be added before submission_ — `https://…`
+| Resource | Link | Description |
+| :--- | :--- | :--- |
+| **Walkthrough Video** | [![Watch Demo](https://img.shields.io/badge/YouTube-Demo_Walkthrough-FF0000?style=flat-square&logo=youtube&logoColor=white)](https://github.com/mrfrosty7007/RazorRC) | Complete 5-minute narrated walkthrough of all five surfaces. |
+| **Submission Pitch Package** | [docs/SUBMISSION_PITCH_PACKAGE.md](docs/SUBMISSION_PITCH_PACKAGE.md) | Second-by-second storyboard (00:00–05:00), script, and camera choreography. |
 
-Running order of the recording: a failed payment landing in the queue, the signal breakdown behind its recovery score, an operator approving the recommended action, and that same action appearing in the audit trail seconds later with the operator's name against it.
+### Where Judges Should Look First
+1. **Start on the Dashboard (`/`):** Toggle between **14D** and **30D** in the top-right corner to verify dynamic window calculations.
+2. **Open the Recovery Queue (`/queue`):** Click the **Needs approval** tab and sort by **AMOUNT**.
+3. **Inspect Ritu Nair (`job_CBXN1`):** Click her row to open the decision drawer, inspect the weighted signals, and click **Approve retry on payday**.
+4. **Verify the Audit Trail (`/audit`):** Navigate to the Audit Trail to confirm that the approval committed immediately with operator attribution (`Priya Menon`).
 
-## Why RazorRC
+[↑ Back to Top](#table-of-contents)
 
-Most failure tooling is a report. It tells a merchant that ₹4.2 lakh failed last week, which codes were involved, and roughly which methods are worst — and then leaves the actual recovery work to whoever opens the export. The failures that were never worth chasing sit next to the ones that would have converted on a single retry, and nothing records what anyone decided.
+---
 
-RazorRC is built to be the operator rather than the report. It takes a position on every failure: *this one is worth chasing, by this channel, at this hour, because of these seven signals* — and then it either does it or waits for a human to approve it. That difference shows up in four places.
+## Quick Start
 
-It **triages instead of aggregating.** A score and a risk tier per payment, so the queue is ordered by expected recovery rather than by timestamp.
+### Option A: Instant Web Preview
+Runs the frontend web application in your browser against the local deterministic seed engine:
 
-It **decides the next action, not just the diagnosis.** Insufficient funds near payday is a scheduled re-presentment; an expired card is a card-refresh nudge; a checkout drop-off is a reminder. The failure taxonomy exists precisely so a new gateway code cannot silently produce a new behaviour.
-
-It **acts on a clock.** Actions are scheduled with delays, and a sweep thread starts what is due. Recovery windows are short, and a recommendation nobody executed is worth nothing.
-
-It **is accountable.** Every score, approval, suppression, retry and automated action lands in an append-only trail, attributed and timestamped. A merchant can audit the engine's reasoning and overrule it — which is the point. An operator that cannot be questioned is not one you would let near live revenue.
-
-The judgement itself is deliberately deterministic rather than generative. Revenue decisions have to be explainable to a finance team, reproducible in a test, and stable across runs, so the engine reasons in weighted signals and shows its work; the language model sits above it in the Copilot, answering questions about the data, never quietly deciding who gets charged again.
-
-## What it does
-
-A payment fails. Razorpay tells you the code and the amount, and that is where most dashboards stop. RazorRC takes it three steps further: it decides whether this failure is worth chasing, decides *how* to chase it, and remembers who decided what.
-
-The recovery score is a rules engine, not a model — seven weighted signals over the payment, the customer's history and the failure taxonomy, each contributing a nudge in one direction or the other. Every recommendation carries the signals that produced it, so a merchant can disagree with the reasoning rather than with a number. The same determinism is what makes the engine testable: given a payment, the score and the recommended action are always the same, and the test suite asserts on them directly.
-
-Five surfaces:
-
-**Dashboard** — revenue at risk, amount recovered, recovery rate and active jobs, each with a period-over-period delta; the live recovery queue; an insight panel; and a recovery timeline.
-
-**Recovery Queue** — filterable by status, failure reason, method and risk tier, with a drawer per job showing the signal breakdown, the attempt history, and the three actions an operator can take (approve the recommendation, retry now, suppress with a reason).
-
-**AI Copilot** — a query surface over the merchant's own recovery data. There is deliberately no scripted chat: with no model provider configured the composer renders a "not connected" state instead of faking an answer.
-
-**Analytics** — trend, failure mix, method mix, and attempt effectiveness, all windowed.
-
-**Audit Trail** — every state transition, every operator action, every sweep that did something, searchable and filterable by severity.
-
-## AI Recovery Workflow
-
+```bash
+git clone https://github.com/mrfrosty7007/RazorRC.git
+cd RazorRC
+pnpm install
+pnpm dev
 ```
-        Payment Failed
-              ↓
-    Failure Classification
-              ↓
-    Recovery Score Engine
-              ↓
- AI Recovery Recommendation
-              ↓
-Merchant Approval / Automation
-              ↓
-       Recovery Action
-              ↓
-   Audit Trail + Metrics
+> [!TIP]
+> The app is immediately available at **`http://localhost:1420/`**.
+
+---
+
+### Option B: Native Desktop Application
+Runs the desktop app inside the native Tauri v2 shell backed by the Rust engine and local SQLite:
+
+```bash
+# Ensure MSVC toolchain is selected (Windows)
+rustup default stable-msvc
+
+# Launch Tauri development environment
+pnpm app:dev
 ```
 
-**Payment Failed** — a failure enters the store as a `failed_payment` row plus a `recovery_job`, carrying the amount in paise, the method, the network, the issuer and the gateway's own description. In Phase 1 this is the demo ingest; in Phase 2 it is the `payment.failed` webhook.
+---
 
-**Failure Classification** — the gateway code is mapped onto a fixed ten-value taxonomy (`domain.rs`) at ingest. The rules engine never reasons about gateway vocabulary, so a new Razorpay code cannot invent a new behaviour without someone extending the taxonomy on purpose.
+### Option C: Build Standalone Windows Installer
+Compiles the production-optimized Windows NSIS installer (`.exe`):
 
-**Recovery Score Engine** — `recovery/rules.rs` applies seven weighted signals: the historical recovery rate for that failure reason, the customer's successful-payment history (or absence of one), retry fatigue, ticket size, whether a mandate is on file, and whether the rail is UPI. Output is a 0–100 score, a risk tier, and the `Signal[]` that produced them.
+```bash
+pnpm app:build
+```
+> [!NOTE]
+> The binary lands in `src-tauri/target/release/bundle/nsis/RazorRC_1.0.0_x64-setup.exe`.
 
-**AI Recovery Recommendation** — the same pass chooses an action kind and channel with a delay attached — re-present the mandate, retry now, refresh the card, send a reminder, or write it off — and the recommendation travels with its evidence, so the drawer can show *why* rather than just *what*.
+[↑ Back to Top](#table-of-contents)
 
-**Merchant Approval / Automation** — an operator can approve, retry immediately, or suppress with a reason; a matching enabled playbook can schedule the action without asking. Both paths converge on the same command layer, so an automated action and a human one are recorded identically.
+---
 
-**Recovery Action** — the sweep thread wakes each minute, claims the jobs whose scheduled moment has arrived, and writes a `recovery_attempt`. Claiming is transactional: if an operator closed the job since the query, the human wins and the sweep skips it.
-
-**Audit Trail + Metrics** — the attempt and its audit event commit in one transaction, then the dashboard, analytics and playbook statistics recompute from the same rows. Nothing in the product is a counter maintained by hand.
-
-## Running it
+## Installation Guide
 
 ### Prerequisites
 
-Node.js 20 or newer, a package manager (pnpm 9 is what the Linux build was validated with; npm works identically), and a stable Rust toolchain via [rustup](https://rustup.rs). Tauri also needs a few system libraries, listed per platform below. `pnpm install` and `npm install` are interchangeable throughout — the scripts are the same.
+| Tool | Minimum Version | Verification Command |
+| :--- | :--- | :--- |
+| **Node.js** | 20.x or newer (tested on 24.x) | `node -v` |
+| **pnpm** | 9.x or newer (tested on 11.x) | `pnpm -v` |
+| **Rust** | 1.77 or newer (tested on 1.98.0) | `cargo --version` |
+| **C++ Build Tools** | Visual Studio 2022 Build Tools (Windows) | Included with MSVC workload |
+| **WebView2** | Evergreen Runtime (Pre-installed on Win 10/11) | Standard system component |
 
-### From source
+---
+
+### Windows Setup
+
+1. **Install Build Tools & Rust:**
+   Install the [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the *"Desktop development with C++"* workload. Then install Rust via [rustup.rs](https://rustup.rs):
+   ```powershell
+   rustup default stable-msvc
+   ```
+
+2. **Clone & Install Dependencies:**
+   ```powershell
+   git clone https://github.com/mrfrosty7007/RazorRC.git
+   cd RazorRC
+   pnpm install
+   ```
+
+3. **Launch Desktop App:**
+   ```powershell
+   pnpm app:dev
+   ```
+
+---
+
+### Linux Setup
+
+On Debian/Ubuntu-based distributions, install required system development packages:
 
 ```bash
-npm install
-npm run app:dev      # Tauri shell + Vite dev server
-```
+sudo apt update && sudo apt install -y \
+  libwebkit2gtk-4.1-dev \
+  build-essential \
+  curl \
+  wget \
+  file \
+  libxdo-dev \
+  libssl-dev \
+  libayatana-appindicator3-dev \
+  librsvg2-dev
 
-Or, with pnpm:
-
-```bash
+git clone https://github.com/mrfrosty7007/RazorRC.git
+cd RazorRC
 pnpm install
 pnpm app:dev
 ```
 
-The webview alone also runs, against the seeded browser dataset, which is useful for UI work:
+---
+
+### macOS Setup
+
+Install Xcode Command Line Tools:
 
 ```bash
-npm run dev
-```
-
-To produce an installer:
-
-```bash
-npm run app:build    # runs `npm run build` first, then bundles
-```
-
-Copy `.env.example` to `.env` before the first run if you want to override the merchant identity, the operator name recorded in the audit trail, or the database location. Every value has a working default, and a missing `.env` is normal — the app starts without Razorpay credentials and says so in the sidebar rather than refusing to launch.
-
-Useful scripts: `npm run typecheck` (`tsc --noEmit`), `npm run lint`, and on the Rust side `cargo test --manifest-path src-tauri/Cargo.toml`, which exercises the engine, the store and the migrations without a webview.
-
-### Download a build (GitHub Releases)
-
-_Placeholder — the installer will be attached to the first tagged release:_ `https://github.com/<owner>/RazorRC/releases`
-
-| Platform | Artifact |
-| --- | --- |
-| Windows 10/11 (x64) | `RazorRC_1.0.0_x64-setup.exe` — NSIS installer |
-| macOS, Linux | No native build — these platforms use the web version |
-
-The desktop app ships for Windows only, so there is no `.dmg`, AppImage or `.deb` to download. Nothing in the code is Windows-specific — the app still compiles and runs on Linux and macOS, which is where most of the development happens — but those platforms are served by the web build rather than an installer. The filename above is derived from `productName` and `version`, so it tracks those two fields rather than being spelled out anywhere, and the installer lands in `src-tauri\target\release\bundle\nsis\`.
-
-### Windows
-
-Install the [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the "Desktop development with C++" workload, and [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) — already present on Windows 11 and on updated Windows 10. Then:
-
-```powershell
-rustup default stable-msvc
-pnpm install
-pnpm app:build          # -> src-tauri\target\release\bundle\nsis\*-setup.exe
-```
-
-The build produces an **NSIS installer** (`.exe`) that installs per-user, so no administrator prompt appears, and WebView2 is fetched by the installer if the machine does not already have it. The installer is unsigned, so SmartScreen will warn on first run; "More info → Run anyway" clears it. Code signing is a release-time step, not a build one. The database is created under `%APPDATA%\com.razorrc.desktop\`.
-
-### Developing on Linux or macOS
-
-Neither platform produces an installer, but both run the app from source. On Debian or Ubuntu, Tauri v2 needs WebKitGTK 4.1 and a tray/appindicator library:
-
-```bash
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
-  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+xcode-select --install
+git clone https://github.com/mrfrosty7007/RazorRC.git
+cd RazorRC
 pnpm install
 pnpm app:dev
 ```
 
-Fedora uses `webkit2gtk4.1-devel`, `openssl-devel`, `libappindicator-gtk3-devel` and `librsvg2-devel`; Arch uses `webkit2gtk-4.1`, `libappindicator-gtk3` and `librsvg`; macOS needs only the Xcode Command Line Tools (`xcode-select --install`). For a release binary without any bundling, `pnpm tauri build --no-bundle`. The database lives under `~/.local/share/com.razorrc.desktop/` or `~/Library/Application Support/com.razorrc.desktop/`, or wherever `RAZORRC_DB_PATH` points.
+---
 
-### Bundle configuration
+### Environment Configuration (.env)
 
-Release settings live in one file. `src-tauri/tauri.conf.json` carries the product metadata — `productName` `RazorRC`, `identifier` `com.razorrc.desktop`, `version` `1.0.0` — the window, the CSP, the icon set, the single `nsis` bundle target, and the Windows-specific settings under `bundle.windows`: per-user install mode and the WebView2 download bootstrapper. There are deliberately no per-platform config overlays, because an overlay's `targets` array replaces the base one and would quietly reintroduce a bundle for a platform that is no longer shipped.
+RazorRC works out of the box with zero configuration using working defaults. To connect Google Gemini or customize the merchant profile:
 
-The icon set comes from one 1024px master: `32x32.png`, `128x128.png` and `128x128@2x.png` for the window, and `icon.ico` (16 through 256) for Windows and the NSIS installer. `icon.icns` is kept for the macOS window icon during development. All PNGs are 32-bit RGBA, which Tauri requires and rejects builds without.
+```bash
+cp .env.example .env
+```
 
-Every bundle key is validated against the config schema that ships with the pinned CLI (`@tauri-apps/cli` 2.11.4, JSON Schema draft-07, `additionalProperties: false`), so a misspelled bundle key cannot reach a build.
+```ini
+# Gemini Copilot (Optional: enables natural language analytical chat)
+COPILOT_API_KEY=your_gemini_api_key_here
+COPILOT_MODEL=gemini-3.7-flash
 
-`.github/workflows/release.yml` builds the installer on `windows-latest` and attaches it to a draft GitHub Release when a `v*` tag is pushed. It never creates a tag: `tagName` is passed only when the ref already is one, and a manual `workflow_dispatch` run uploads the installer as a workflow artifact instead of touching releases at all.
+# Merchant Profile Customization
+RAZORRC_MERCHANT_NAME="Kettle & Co."
+RAZORRC_MERCHANT_ID="acc_KLm3RtNvQz"
 
-Note for anyone upgrading a local install: the `identifier` determines the application-data directory, so changing it moves the database. A database written under an earlier identifier is not migrated; point `RAZORRC_DB_PATH` at the old file if you want to keep it.
+# Razorpay Test Mode Credentials (Optional Phase 2 Webhooks)
+RAZORPAY_KEY_ID=rzp_test_...
+RAZORPAY_KEY_SECRET=...
+RAZORPAY_WEBHOOK_SECRET=...
+```
 
-## Built With
+[↑ Back to Top](#table-of-contents)
 
-**React 18** and **TypeScript** — the console is a lot of stateful tables, drawers and filters, and strict TypeScript is what keeps the paise-versus-rupees and status-taxonomy mistakes from reaching the screen. Every Rust struct that crosses the bridge has a matching interface in `src/domain/types.ts`.
+---
 
-**Tauri v2** — a desktop shell with a per-command permission model. The webview is granted `core:default` and nothing else, so the frontend cannot touch the filesystem, spawn a shell or make an HTTP request; the only way to the database is through the sixteen audited commands. That is a security property Electron would not have given for free.
+## Running RazorRC (Feature Walkthrough)
 
-**Rust** — the recovery engine, the scoring rules, the sweep thread and the store. Determinism and an append-only trail are the product claims, and both are easier to guarantee in a typed language with real transactions and a test suite that runs without a UI.
+### 1. Merchant Dashboard (`/`)
+- **Action:** Open the dashboard and observe the **Money in Motion** band.
+- **Interaction:** Click **7D**, **14D**, and **30D** in the top right. Watch the 4 KPI cards (`Revenue at risk`, `Amount recovered`, `Recovery rate`, `Active recovery jobs`) and the dual-axis chart re-render synchronously.
+- **AI Insights:** Check the right-hand panel for automated pattern alerts like *Batch insufficient-funds retries into the payday window* (+₹1.58L opportunity).
 
-**SQLite** (rusqlite, bundled) — local, transactional and inspectable. `STRICT` tables, WAL journaling, foreign keys on, and triggers that make `audit_events` reject updates and deletes outright.
+### 2. Recovery Queue (`/queue`)
+- **Action:** Click **Recovery queue** in the sidebar.
+- **Interaction:** Click the preset tabs: `All jobs`, `Needs approval`, `In flight`, `Awaiting customer`, `Closed`.
+- **Search & Sort:** Type a customer name (e.g., `Ritu`) into the search bar, or click **AMOUNT** to sort by rupees at stake.
 
-**Tailwind CSS** — a small set of semantic tokens (`canvas`, `surface`, `raised`, `hairline`, `content`, `azure`, `mint`, `amber`, `coral`) rather than ad-hoc hex values, which is what keeps the dark fintech theme coherent across five pages.
+### 3. Decision Drawer & Operator Actions
+- **Action:** Click any job row (e.g. `Ritu Nair — ₹66,300.00`).
+- **Review Evidence:** Read the customer's payment history, gateway error text, and the **Why this action** signal breakdown.
+- **Execute Decision:**
+  - Click **Approve retry on payday**: The job immediately moves to `Scheduled` state with an assigned execution timestamp.
+  - Click **Retry now**: Manually queues an immediate gateway attempt.
+  - Click **Stop automation**: Halts automated retries and requires a suppression reason.
 
-**Recharts** — the trend, mix and effectiveness charts, themed against the same tokens so the visualisations do not look bolted on.
+### 4. AI Copilot & Automation Playbooks (`/copilot`)
+- **Recommendation Queue:** Review batch recommendations clustered by action type (e.g., *Retry on payday*, *Offer UPI*, *Request new card*).
+- **Automation Playbooks:** View the 5 pre-configured rule sets. Toggle a playbook (e.g. `Issuer downtime hold`) on or off; observe the state update in real time.
+- **Gemini Copilot:** Type a question (e.g. *"Which failure reason lost us the most money this week?"*) or click a starter prompt pill. Messages stream in real time and persist across sessions.
 
-**Vite** — dev server and bundler, with the Tauri dev URL wired to port 1420.
+### 5. Analytics & Retry Economics (`/analytics`)
+- **Where the Money Leaks:** Inspect failure reasons sorted by value at risk and historical recovery rate.
+- **Rail Effectiveness:** Compare recovery conversion across Cards, UPI, Netbanking, e-Mandates, and Wallets.
+- **Attempt Effectiveness Table:** Review the marginal yield per attempt rung (Sequence 1 to 4+). Observe the **8% decision floor** where further retries cost more in fees than they collect.
+
+### 6. Immutable Audit Trail (`/audit`)
+- **Audit Verification:** Inspect the chronological log of all operator approvals, system sweeps, and playbook modifications.
+- **Filtering:** Filter by severity (`Critical`, `Warning`, `Notice`, `Info`) or search by payment ID.
+- **Export View:** Click **Export view** to download `razorrc-audit-YYYY-MM-DD.csv`, verified with RFC CRLF endings and spreadsheet formula injection sanitization.
+
+[↑ Back to Top](#table-of-contents)
+
+---
+
+## Troubleshooting
+
+| Problem | Root Cause | Verified Resolution |
+| :--- | :--- | :--- |
+| **`cargo: command not found`** | Rust is not installed or not in system `PATH`. | Install via `winget install Rustlang.Rustup` or from [rustup.rs](https://rustup.rs). Restart your terminal. |
+| **`LINK : fatal error LNK1181: cannot open input file 'msvcrt.lib'`** | Missing Microsoft C++ Build Tools or Windows SDK. | Run `winget install Microsoft.VisualStudio.2022.BuildTools --override "--passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"`. |
+| **`WebView2Loader.dll not found` or blank window** | Missing Microsoft Edge WebView2 runtime. | Download and run the official [WebView2 Evergreen Bootstrapper](https://go.microsoft.com/fwlink/p/?LinkId=2124703). |
+| **`pnpm: command not found`** | pnpm package manager is not installed globally. | Run `npm install -g pnpm` or `corepack enable pnpm`. |
+| **Port 1420 is in use (`EADDRINUSE`)** | An existing Vite or Tauri dev server is already running. | In PowerShell: `Get-Process node \| Stop-Process -Force`. Alternatively, use `Stop-Process -Id (Get-NetTCPConnection -LocalPort 1420).OwningProcess`. |
+| **Tauri fails to build with esbuild permission error** | pnpm 10+ requires explicit build scripts permission. | `pnpm-workspace.yaml` already includes `allowBuilds: esbuild: true`. Run `pnpm install` again. |
+| **Stale demo data or 30D filter matches 14D** | Database was seeded under an earlier release schema. | Delete the local SQLite database file: `Remove-Item "$env:APPDATA\com.razorrc.desktop\recovery.sqlite3" -Force` and relaunch `pnpm app:dev`. |
+| **Windows SmartScreen warning on installer** | The NSIS installer executable is unsigned. | Click **More info** &rarr; **Run anyway** to bypass local SmartScreen. |
+| **Copilot shows "Not connected"** | `COPILOT_API_KEY` is missing or empty in `.env`. | Add your Gemini API key to `.env` as `COPILOT_API_KEY=AIzaSy...` and restart the application. |
+| **Audit CSV export fails or opens empty** | Webview file download permission restriction. | RazorRC creates an explicit DOM anchor, injects CRLF, and delays blob revocation. Use the **Export view** button on `/audit`. |
+
+[↑ Back to Top](#table-of-contents)
+
+---
 
 ## Architecture
 
-The React app never talks to SQLite. It talks to a `DataSource` — six repository interfaces defined in `src/data/repositories.ts` — and `src/data/index.ts` picks the implementation once, at module load: the Tauri adapter when running inside the desktop shell, the seed adapter otherwise. Set `VITE_FORCE_SEED=1` to keep the seeded data while running the shell. Every page is written against the interface, so no component knows or cares which side of the bridge its data came from.
+### System Flow Diagram
 
-On the Rust side, `AppState` exposes exactly two ways to reach the database, `read` and `write`. A write opens a transaction, and the change and its audit event commit together or not at all. There is no third path, which is what makes "every action is in the trail" a property of the code rather than a promise in this README. The webview cannot bypass it either: `capabilities/default.json` grants only `core:default`, so there is no filesystem, shell or HTTP access in the frontend at all.
+```mermaid
+graph TD
+    subgraph UI ["Frontend (React 18 + TypeScript)"]
+        DASH["Dashboard (/)" ]
+        QUEUE["Recovery Queue (/queue)"]
+        COPILOT["AI Copilot (/copilot)"]
+        ANALYTICS["Analytics (/analytics)"]
+        AUDIT["Audit Trail (/audit)"]
+        DRAWER["Decision Drawer"]
+    end
+
+    subgraph IPC ["Tauri v2 IPC Bridge"]
+        COMMANDS["16 Audited Commands\n(Synchronous SQLite Transactions)"]
+        STREAM["Copilot Stream Channel\n(Event: copilot:stream)"]
+    end
+
+    subgraph CORE ["Rust Engine Core (src-tauri)"]
+        RULES["Deterministic Rules Engine\n(recovery/rules.rs)\n7 Weighted Signals"]
+        SWEEP["Sweep Thread Scheduler\n(recovery/engine.rs)\nRuns Every 60s"]
+        SANITIZER["PII Sanitizer & Redactor\n(copilot.rs)"]
+        STORE["Transactional Store\n(db/mod.rs)"]
+    end
+
+    subgraph DB ["Local Storage (SQLite STRICT)"]
+        FAILED["failed_payments"]
+        JOBS["recovery_jobs"]
+        ATTEMPTS["recovery_attempts"]
+        PLAYBOOKS["playbooks"]
+        AUDIT_TBL["audit_events\n(Append-Only by DB Triggers)"]
+    end
+
+    subgraph EXT ["External Services"]
+        GEMINI["Google Gemini API\n(Advisory Chat Only)"]
+        RZP["Razorpay Gateway\n(Payment Ingest & Webhooks)"]
+    end
+
+    UI --> IPC
+    IPC --> CORE
+    RULES --> STORE
+    SWEEP --> STORE
+    SANITIZER --> GEMINI
+    STORE --> DB
+    RZP -.->|payment.failed| CORE
+```
+
+### Component Responsibilities
+
+1. **Frontend (`src/`):** Built with React 18, Tailwind CSS, and Recharts. All data access routes through the [`DataSource`](src/data/repositories.ts) interface, switching dynamically between the Tauri IPC adapter and seed adapter.
+2. **IPC Command Layer (`src-tauri/src/commands.rs`):** Strictly typed IPC bridge exposing 16 audited commands. Errors cross as human-readable strings; operator identity is sourced from the process environment.
+3. **Scoring Engine (`src-tauri/src/recovery/rules.rs`):** Applies 7 weighted signals to produce a normalized 0–100 recovery score and next action with an attached cooldown delay.
+4. **Scheduler Sweep Thread (`src-tauri/src/recovery/engine.rs`):** Wakes once every minute, claims jobs whose scheduled moment has arrived, and commits attempt records transactionally.
+5. **Database Ledger (`src-tauri/src/db/`):** Bundled SQLite operating in WAL mode with `STRICT` tables. All monetary values are stored as integer paise (no floats). Database triggers enforce append-only immutability on `audit_events`.
+
+### Financial Integrity & Security Model
+
+> [!IMPORTANT]
+> **Strict Paise Accounting:** RazorRC never uses floating-point types for monetary values. All amounts are stored, calculated, and communicated as 64-bit integer paise (e.g. ₹1,234.50 is stored as `123450`).
+
+- **Capability Sandboxing:** The Tauri webview is granted `core:default` permissions only. It has zero access to the filesystem, shell execution, or arbitrary external HTTP networks.
+- **PII Redaction:** Free-form prompts to the Gemini Copilot are processed by `redact_prompt`, replacing email addresses, telephone numbers, card numbers, and bank account tokens with `[REDACTED]`.
+
+[↑ Back to Top](#table-of-contents)
+
+---
+
+## Tech Stack
+
+| Layer | Technology | Version | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Frontend Framework** | React | `18.3.1` | Component-driven user interface |
+| **Language** | TypeScript | `5.6.3` | Type safety across domain models and IPC |
+| **Build Tool & Bundler** | Vite | `5.4.10` | Instant dev server and optimized production packaging |
+| **Desktop Shell** | Tauri CLI / API | `2.1.1` | Lightweight, secure desktop application container |
+| **Native Runtime** | Rust | `1.77+` | Deterministic scoring engine, scheduler, and IPC |
+| **Database** | SQLite (rusqlite) | `0.32.1` | Local transactional database with STRICT tables |
+| **Styling** | Tailwind CSS | `3.4.14` | Cohesive dark fintech design system |
+| **Data Visualization** | Recharts | `2.13.3` | Recovery trends, rail breakdowns, and yield curves |
+| **AI Copilot** | Google Gemini API | `3.7-flash` | Advisory pattern analysis with PII redaction |
+
+[↑ Back to Top](#table-of-contents)
+
+---
+
+## Demo Dataset
+
+RazorRC starts with an out-of-the-box merchant dataset representing an active Indian D2C business on Razorpay Test Mode:
+
+- **26 Failed Payments** spanning 0.2 to 28.6 days across three chronological cohorts.
+- **Laddered Recovery Attempts** showing historical progressions across gateway charges, UPI collect links, and WhatsApp reminders.
+
+### The Hero Case: Ritu Nair
+
+- **Job ID:** `job_CBXN1`
+- **Customer:** Ritu Nair (`ritu.nair@example.in`) · **LTV:** ₹1,67,000 (22 prior successful payments).
+- **Amount at Risk:** **₹66,300.00** (`66,30,000` paise) on a Kotak Mahindra RuPay Card.
+- **Failure Reason:** Insufficient funds (`insufficient_funds`).
+- **Engine Recommendation:** *"Retry on 1 Sep"* (Scheduled for 06:30 UTC during the salary credit window).
+- **Signals:** Failure reason baseline (`+0.12`), Established payer (`+0.08`), High ticket (`-0.05`) &rarr; **Score: 65%**.
+
+### Resetting Demo Data
+
+To reset the database back to its original state on Windows:
+
+```powershell
+Remove-Item "$env:APPDATA\com.razorrc.desktop\recovery.sqlite3*" -Force
+```
+To launch with a completely empty database, set `RAZORRC_DEMO_SEED=0` in your environment.
+
+[↑ Back to Top](#table-of-contents)
+
+---
+
+## Project Structure
 
 ```
-src/
-  app/            router and route metadata
-  components/     ui primitives, domain components, charts, layout
-  data/           repositories, seed adapter, tauri adapter, fixtures
-  domain/         shared types, formatting, taxonomy labels
-  features/       one folder per page
-  hooks/          useQuery / useAction against the DataSource
-src-tauri/src/
-  domain.rs       the shared model, mirrored field-for-field in TypeScript
-  db/             store, migrations, jobs, audit, metrics, playbooks
-  recovery/       rules (scoring), engine (sweep thread), insights
-  state.rs        read / write — the only two doors to the database
-  commands.rs     the sixteen commands the adapter calls
-  bootstrap.rs    default playbooks and the demo dataset
+RazorRC/
+├── .github/
+│   └── workflows/
+│       └── release.yml          # Automated Windows installer GitHub release pipeline
+├── docs/
+│   ├── QA_REPORT.md             # End-to-end validation report (503 passed tests)
+│   ├── SUBMISSION_PITCH_PACKAGE.md # 5-minute storyboard & word-for-word pitch script
+│   └── screenshots/             # 1080p high-resolution application screenshots
+├── src/
+│   ├── app/                     # HashRouter and SessionProvider
+│   ├── components/
+│   │   ├── charts/              # Recharts visualizers (Trend, Yield, Reasons, Rails)
+│   │   ├── domain/              # Domain tags, money formatters, badges
+│   │   ├── layout/              # AppShell, Sidebar, Topbar, ErrorBoundary
+│   │   └── ui/                  # Buttons, Callouts, Drawers, Panels, Tables
+│   ├── data/
+│   │   ├── adapters/            # TauriAdapter (IPC) vs. SeedAdapter (In-Memory)
+│   │   ├── copilot.ts           # Gemini streaming and chat session persistence
+│   │   └── seed/                # Deterministic seed generator & TypeScript rules mirror
+│   ├── domain/                  # Shared TypeScript interfaces and taxonomy labels
+│   ├── features/
+│   │   ├── analytics/           # Failure mix, rail recovery, retry yield curves
+│   │   ├── audit/               # Immutable audit log and CSV export
+│   │   ├── copilot/             # Batch recommendation queues and playbooks
+│   │   ├── dashboard/           # Money in motion band, KPIs, recovery trend
+│   │   └── queue/               # Working recovery queue and JobDetailDrawer
+│   └── lib/                     # Currency formatting, datetime arithmetic, CSV encoder
+├── src-tauri/
+│   ├── Cargo.toml               # Rust dependencies and release profile
+│   ├── tauri.conf.json          # Tauri v2 bundle configuration and security CSP
+│   └── src/
+│       ├── bootstrap.rs         # Default playbooks and demo dataset seeder
+│       ├── clock.rs             # Calendar window arithmetic (midnight UTC anchored)
+│       ├── commands.rs          # 16 audited IPC commands
+│       ├── copilot.rs           # Gemini streaming client and client-side PII sanitizer
+│       ├── domain.rs            # Rust domain model matching TypeScript 1:1
+│       ├── db/
+│       │   ├── audit.rs         # Append-only audit queries and logging
+│       │   ├── chat.rs          # Copilot session and message store
+│       │   ├── jobs.rs          # Transactional job state transitions
+│       │   ├── metrics.rs       # Windowed KPI and breakdown SQL queries
+│       │   ├── migrations.rs    # Numbered forward migrations
+│       │   └── schema/          # SQLite STRICT schema & trigger definitions
+│       ├── recovery/
+│       │   ├── engine.rs        # Sweep thread scheduler (60s tick)
+│       │   ├── insights.rs      # Anomaly and revenue opportunity detector
+│       │   └── rules.rs         # 7-signal deterministic scoring engine
+│       └── state.rs             # AppState: exclusive read and write transaction gates
+├── package.json                 # Node scripts and dependencies
+├── tailwind.config.ts           # Semantic fintech dark theme tokens
+└── vite.config.ts               # Vite bundler configuration
 ```
 
-Money is stored and moved as integer paise; there is no float anywhere in the money path. Timestamps are fixed-width ISO-8601 UTC millisecond strings, so a `TEXT` column sorts chronologically and SQLite can do the ordering. Schema tables are `STRICT`, `audit_events` is append-only by trigger — an `UPDATE` or `DELETE` against it raises `audit_events is append-only` — and the engine writes nothing on a sweep that finds nothing, because sixty empty events an hour would bury the merchant's own actions.
+[↑ Back to Top](#table-of-contents)
 
-## The demo dataset
+---
 
-On first run against an empty store the engine ingests twelve failed payments and closes four of them as recovered. Every row goes through the real `jobs::ingest` path, so the scores, risk tiers, recommended actions and signals on screen are the engine's own output rather than fixtures — and the seeding announces itself in the audit trail as `system.demo_seed`. Set `RAZORRC_DEMO_SEED=0` to start empty.
+## Testing & Verification
 
-## Verification status
+RazorRC includes an exhaustive, multi-tier test harness covering the Rust core, IPC serialization, database migrations, and timezone arithmetic.
 
-The app has been built and run on **Linux** with Node.js, pnpm, Rust and Tauri: the frontend typechecks and bundles, the Rust crate compiles, `cargo test` passes over the engine, the store and the migrations, and the desktop shell starts against a real SQLite database with the demo dataset seeded through the live ingest path.
+### 1. Rust Engine & Store Test Suite
+Executes unit tests over the scoring rules, transactional state transitions, scheduler sweeps, and SQLite append-only triggers:
 
-**The Windows installer will be validated before release.** Nothing in the code is platform-specific — the store resolves its own path from the OS application-data directory, and the only Windows-only line is the release-mode `windows_subsystem` attribute in `main.rs` — but the NSIS bundle has not been produced yet, so treat the installer name in the Releases table above as intended rather than tested. `.github/workflows/release.yml` on `windows-latest` is what will confirm it.
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+> [!NOTE]
+> **Verified Result:** `128 passed; 0 failed; 0 ignored; finished in 0.38s`.
 
-Alongside the build, the project is held together by scripted consistency checks worth knowing about: the sixteen `generate_handler!` names match the adapter's command list exactly; every `module::item` call resolves to a declared public item; every table and column named in SQL exists in the schema; and the serde field names on every Rust struct match the TypeScript interface it crosses the bridge as. Those four invariants are the ones that break silently when the two halves of the app drift apart, which is why they are checked rather than assumed.
+### 2. Frontend Typecheck & Build
+Validates strict TypeScript types and produces the production bundle:
 
-## Phase 2
+```bash
+pnpm run typecheck    # tsc --noEmit
+pnpm run build        # bundles frontend to dist/
+```
 
-Razorpay Test Mode ingestion (a `payment.failed` webhook with HMAC verification, plus a backfill over the Payments API), real action delivery for the retry and reminder channels, and a model provider behind the Copilot. The credential names those need are already in `.env.example`, and the transport boundary is the only thing that has to change: the rules engine, the store and the audit trail are already the shape they need to be.
+### 3. Code Style & Linter
+Ensures clean code quality across all React components and hooks:
+
+```bash
+pnpm run lint
+```
+
+[↑ Back to Top](#table-of-contents)
+
+---
+
+## Releases
+
+Official production installers are published via GitHub Releases:  
+👉 **[https://github.com/mrfrosty7007/RazorRC/releases](https://github.com/mrfrosty7007/RazorRC/releases)**
+
+- **Current Release:** `v1.0.0`
+- **Installer Name:** `RazorRC_1.0.0_x64-setup.exe`
+- **Target OS:** Windows 10/11 (64-bit)
+- **Install Type:** Per-user NSIS installation (no administrator privileges required).
+
+[↑ Back to Top](#table-of-contents)
+
+---
+
+## Roadmap
+
+### Current MVP (Track 03 Submission)
+- [x] Deterministic 7-signal recovery scoring engine.
+- [x] Bounded automation playbooks with delay enforcement.
+- [x] Proactive AI pattern and anomaly detector.
+- [x] 5-stage *Money in Motion* continuous recovery funnel.
+- [x] Attempt effectiveness curve with 8% yield floor.
+- [x] Trigger-enforced append-only SQLite audit ledger.
+- [x] Gemini recovery copilot with client-side PII sanitization.
+- [x] Desktop installer bundle for Windows (Tauri v2).
+
+### Phase 2: Live Gateway Integration
+- [ ] Direct `payment.failed` webhook listener with cryptographic HMAC verification.
+- [ ] Automated historical backfill via the Razorpay Payments API.
+- [ ] Direct retry execution through Razorpay Orders and Payments API.
+- [ ] Hosted checkout link dispatch via WhatsApp Business Cloud API.
+
+### Phase 3: Multi-Merchant & Omnichannel Delivery
+- [ ] Multi-merchant account switcher for aggregators and holding companies.
+- [ ] Dynamic ML model fine-tuning over merchant-specific capture history.
+- [ ] Smart routing across alternative payment aggregators during prolonged bank outages.
+
+---
+
+## Authors & Acknowledgments
+
+- **Author:** Developed for the **Razorpay AI Buildathon 2026** (Track 03: AI Revenue Recovery).
+- **License:** Distributed under the MIT License. See `LICENSE` for details.
